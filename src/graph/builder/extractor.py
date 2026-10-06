@@ -818,7 +818,7 @@ class GraphExtractor:
         http_client = httpx.AsyncClient(
             limits=httpx.Limits(max_connections=200, max_keepalive_connections=100, keepalive_expiry=30.0),
             timeout=httpx.Timeout(connect=10.0, read=45.0, write=10.0, pool=15.0),
-            verify=False,
+            verify=True,
             http2=False,
         )
         if settings.ml_inference_key_id and settings.ml_inference_secret and settings.ml_inference_base_url:

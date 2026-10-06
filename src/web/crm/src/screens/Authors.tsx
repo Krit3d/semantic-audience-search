@@ -13,7 +13,8 @@ const statusTone: Record<ActiveStatus, string> = { 'Свободен': 'green', 
 const SOCIALS: Social[] = ['Instagram', 'VK', 'Telegram', 'TikTok', 'YouTube', 'Дзен'];
 const PAGE = 15;
 function getSearchBaseUrl(): string {
-  return import.meta.env.VITE_SEARCH_URL || '/';
+  const raw = import.meta.env.VITE_SEARCH_URL || 'https://collabrama.ru';
+  return raw.replace(/\/+$/, '');
 }
 
 const fmtER = (n: number) => `${n.toFixed(1).replace('.', ',')}%`;

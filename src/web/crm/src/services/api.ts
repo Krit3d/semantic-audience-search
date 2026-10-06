@@ -28,6 +28,12 @@ export interface CreatorRecord {
   source?: 'search' | 'manual' | string | null;
   account_status?: string | null;
   accountStatus?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  telegram_commercial?: string | null;
+  telegram_personal?: string | null;
+  instagram?: string | null;
+  whatsapp?: string | null;
 }
 
 export interface ManualCreatorPayload {
@@ -159,7 +165,14 @@ export interface DealUpdatePayload {
   terms?: string | null;
 }
 
+export interface AvailableChannelItem {
+  channel_type: string;
+  channel_target: string;
+  role?: string;
+}
+
 export interface CommunicationChannelItem {
+  id: string;
   deal_id: number | null;
   author_id: string;
   author_name: string;
@@ -171,7 +184,9 @@ export interface CommunicationChannelItem {
   last_message_time: string;
   unread_count: number;
   is_archived: boolean;
-  channel_type?: 'telegram' | 'email' | 'whatsapp' | 'internal' | string | null;
+  channel_target?: string | null;
+  available_channels?: AvailableChannelItem[];
+  channel_type: 'telegram' | 'email' | 'whatsapp' | 'instagram' | string;
 }
 
 const TOKEN_KEY = 'creatorflow_token';
@@ -179,12 +194,25 @@ const USER_KEY = 'creatorflow_user';
 
 const ROOT_API_URL = (import.meta.env.VITE_API_URL || 'https://api.collabrama.ru/api/v1').replace(/\/+$/, '');
 const API_BASE = `${ROOT_API_URL.replace(/\/crm\/?$/, '')}/crm`;
-export const MEDIA_SERVER_BASE = ROOT_API_URL.replace(/\/api(\/v\d+)?.*$/, '');
+export const MEDIA_SERVER_BASE = (() => {
+  try {
+    const raw = import.meta.env.VITE_API_URL || 'https://api.collabrama.ru/api/v1';
+    const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://api.collabrama.ru';
+    const parsed = new URL(raw, fallbackOrigin);
+    return parsed.origin;
+  } catch {
+    return '';
+  }
+})();
 
 export function resolveMediaUrl(path?: string | null): string {
   if (!path) return '';
-  if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  return `${MEDIA_SERVER_BASE}/${path.replace(/^\/+/, '')}`;
+  const trimmed = path.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+  const normalizedPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  if (MEDIA_SERVER_BASE) return `${MEDIA_SERVER_BASE}${normalizedPath}`;
+  return normalizedPath;
 }
 
 class ApiError extends Error {
@@ -338,14 +366,16 @@ export const api = {
     return request<CommunicationChannelItem[]>('/communications');
   },
 
-  async initCommunication(creatorId: string): Promise<CommunicationChannelItem> {
-    return request<CommunicationChannelItem>(`/communications/init?creator_id=${encodeURIComponent(creatorId)}`, {
+  async initCommunication(creatorId: string, channelType?: string): Promise<CommunicationChannelItem> {
+    const query = `?creator_id=${encodeURIComponent(creatorId)}${channelType ? `&channel_type=${encodeURIComponent(channelType)}` : ''}`;
+    return request<CommunicationChannelItem>(`/communications/init${query}`, {
       method: 'POST',
     });
   },
 
-  async getCreatorMessages(creatorId: string): Promise<DealMessageItem[]> {
-    return request<DealMessageItem[]>(`/creators/${encodeURIComponent(creatorId)}/messages`);
+  async getCreatorMessages(creatorId: string, channelType?: string): Promise<DealMessageItem[]> {
+    const query = channelType ? `?channel_type=${encodeURIComponent(channelType)}` : '';
+    return request<DealMessageItem[]>(`/creators/${encodeURIComponent(creatorId)}/messages${query}`);
   },
 
   async uploadChatFile(file: File): Promise<FileUploadResponse> {
@@ -373,7 +403,7 @@ export const api = {
     return (await response.json()) as FileUploadResponse;
   },
 
-  async sendCreatorMessage(creatorId: string, text?: string | null, senderType: string = 'user', media?: { media_url: string; media_name: string; media_type: string }): Promise<DealMessageItem> {
+  async sendCreatorMessage(creatorId: string, text?: string | null, senderType: string = 'user', media?: { media_url: string; media_name: string; media_type: string }, preferredChannel?: string): Promise<DealMessageItem> {
     return request<DealMessageItem>(`/creators/${encodeURIComponent(creatorId)}/messages`, {
       method: 'POST',
       body: JSON.stringify({
@@ -382,6 +412,7 @@ export const api = {
         media_url: media?.media_url || null,
         media_name: media?.media_name || null,
         media_type: media?.media_type || null,
+        preferred_channel: preferredChannel || null,
       }),
     });
   },

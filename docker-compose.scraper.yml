@@ -298,7 +298,7 @@ services:
       PYTHONUNBUFFERED: "1"
       MEDIA_BRIDGE_SECRET: ${MEDIA_BRIDGE_SECRET:-}
     ports:
-      - "8090:8090"
+      - "${TS_IP_SCRAPER:?set TS_IP_SCRAPER in .env}:8090:8090"
     volumes:
       - .:/app
       - ./media:/app/media

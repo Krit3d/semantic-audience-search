@@ -22,7 +22,7 @@ class TestDbsfRankingEngine:
     def test_aggregate_author_vector_score_decay(self):
         scores = [0.90, 0.50, 0.40]
         result = DbsfRankingEngine.aggregate_author_vector_score(scores)
-        expected = 0.90 + max(0.0, 0.50 - 0.30) / (2.0 ** 0.70) + max(0.0, 0.40 - 0.30) / (3.0 ** 0.70)
+        expected = 0.90 + max(0.0, 0.50 - 0.40) / (2.0 ** 0.70) + max(0.0, 0.40 - 0.40) / (3.0 ** 0.70)
         assert result == pytest.approx(expected, rel=1e-4)
         assert result < 0.90 + 0.20 + 0.10
         assert result > 0.90
@@ -48,12 +48,11 @@ class TestDbsfRankingEngine:
             graph_tms_score=0.0,
             raw_graph_score=0.0,
         )
-        mention_signal = min(1.0, 2 * 0.20 + 3 * 0.10)
-        ontological_priors = 0.25 + 0.20 + 0.15
-        expected_raw = 0.45 * 0.50 + 0.35 * mention_signal + ontological_priors
-        raw_score, tms_score = DbsfRankingEngine.calculate_raw_graph_score(evidence)
+        mention_signal = min(1.0, 2 * 0.25 + 3 * 0.15)
+        ontological_priors = 0.35 + 0.30 + 0.25
+        expected_raw = 0.50 * 0.50 + 0.35 * mention_signal + 0.15 * min(1.0, ontological_priors)
+        raw_score = DbsfRankingEngine.calculate_raw_graph_score(evidence)
         assert raw_score == pytest.approx(expected_raw, rel=1e-4)
-        assert tms_score == 0.0
 
     def test_calculate_raw_graph_score_promoter_penalty(self):
         evidence = GraphAuthorEvidence(
@@ -70,16 +69,14 @@ class TestDbsfRankingEngine:
             graph_tms_score=0.0,
             raw_graph_score=0.0,
         )
-        mention_signal = min(1.0, 0 * 0.20 + 0 * 0.10)
-        ontological_priors = -0.10
-        expected_raw = max(0.0, 0.45 * 0.50 + 0.35 * mention_signal + ontological_priors)
-        raw_score, tms_score = DbsfRankingEngine.calculate_raw_graph_score(evidence)
+        mention_signal = 0.0
+        ontological_priors = -0.15
+        expected_raw = 0.50 * 0.50 + 0.35 * mention_signal + 0.15 * max(0.0, ontological_priors)
+        raw_score = DbsfRankingEngine.calculate_raw_graph_score(evidence)
         assert raw_score == pytest.approx(expected_raw, rel=1e-4)
 
     def test_calculate_raw_graph_score_none(self):
-        raw_score, tms_score = DbsfRankingEngine.calculate_raw_graph_score(None)
-        assert raw_score == 0.0
-        assert tms_score == 0.10
+        assert DbsfRankingEngine.calculate_raw_graph_score(None) == 0.0
 
     def test_calculate_raw_graph_score_spam(self):
         evidence = GraphAuthorEvidence(
@@ -96,9 +93,7 @@ class TestDbsfRankingEngine:
             graph_tms_score=0.0,
             raw_graph_score=0.0,
         )
-        raw_score, tms_score = DbsfRankingEngine.calculate_raw_graph_score(evidence)
-        assert raw_score == 0.0
-        assert tms_score == 0.0
+        assert DbsfRankingEngine.calculate_raw_graph_score(evidence) == 0.0
 
     def test_normalize_distribution_edge_cases(self):
         assert DbsfRankingEngine._normalize_distribution([]) == []
@@ -135,8 +130,7 @@ class TestDbsfRankingEngine:
             1: GraphAuthorEvidence(account_id=1, topic_coverage_weight=0.0, matched_categories=[], matched_entities_count=0, direct_mentions_count=0, has_role_relation=False, has_tech_relation=False, is_creator=False, is_promoter=False, is_spam_or_gambling=True, graph_tms_score=0.0, raw_graph_score=0.0),
         }
         candidates = DbsfRankingEngine.rank_candidates(vector_aggregates, graph_evidences)
-        assert len(candidates) == 1
-        assert candidates[0].final_score == 0.0
+        assert candidates == []
 
 
 class TestGraphReasoner:
@@ -146,31 +140,23 @@ class TestGraphReasoner:
         mock_repo = AsyncMock()
         return GraphReasoner(mock_repo)
 
-    def test_tms_direct_category_match(self, reasoner):
-        author_categories = ["IAB1-1", "IAB2"]
-        target_iab_ids = ["IAB1-1", "IAB3"]
-        ancestor_map = {"IAB1-1": ["IAB1"], "IAB3": ["IAB2"]}
-        tms = reasoner._calculate_tms_score(author_categories, target_iab_ids, ancestor_map)
-        assert tms == 1.0
+    @pytest.mark.asyncio
+    async def test_reasoner_normalizes_and_delegates_search_tokens(self, reasoner):
+        reasoner._graph_repo.get_authors_graph_evidence.return_value = {1: "evidence"}
+        result = await reasoner.reason_author_evidences(
+            [1], [" Entity ", "ENTITY"], [" Topic "],
+            negative_topics=[" Spam "], negative_entities=["SPAM"],
+        )
+        assert result == {1: "evidence"}
+        reasoner._graph_repo.get_authors_graph_evidence.assert_awaited_once_with(
+            account_ids=[1], search_tokens=["entity", "topic"],
+            target_languages=None, negative_tokens=["spam"],
+        )
 
-    def test_tms_ancestor_category_match(self, reasoner):
-        author_categories = ["IAB1"]
-        target_iab_ids = ["IAB1-1", "IAB3"]
-        ancestor_map = {"IAB1-1": ["IAB1", "IAB0"], "IAB3": ["IAB2"]}
-        tms = reasoner._calculate_tms_score(author_categories, target_iab_ids, ancestor_map)
-        assert tms == 0.70
-
-    def test_tms_no_match(self, reasoner):
-        author_categories = ["IAB5"]
-        target_iab_ids = ["IAB1-1", "IAB3"]
-        ancestor_map = {"IAB1-1": ["IAB1"], "IAB3": ["IAB2"]}
-        tms = reasoner._calculate_tms_score(author_categories, target_iab_ids, ancestor_map)
-        assert tms == 0.0
-
-    def test_tms_empty_categories(self, reasoner):
-        assert reasoner._calculate_tms_score([], ["IAB1"], {}) == 0.0
-        assert reasoner._calculate_tms_score(["IAB1"], [], {}) == 0.0
-        assert reasoner._calculate_tms_score([], [], {}) == 0.0
+    @pytest.mark.asyncio
+    async def test_reasoner_skips_repository_for_empty_account_ids(self, reasoner):
+        assert await reasoner.reason_author_evidences([], [], []) == {}
+        reasoner._graph_repo.get_authors_graph_evidence.assert_not_awaited()
 
 
 class TestPostgresHydrator:
@@ -407,6 +393,7 @@ class TestSearchService:
             ),
         ]
         mock_dbsf_engine.rank_candidates.return_value = scored_candidates
+        mock_dbsf_engine.combine_multi_cluster_candidates.return_value = []
 
         hydrated_record = HydratedAuthorRecord(
             account_id=1,
@@ -448,7 +435,6 @@ class TestSearchService:
         assert response.items[0].final_score == 0.85
         assert response.items[0].vector_score == 0.85
         assert response.items[0].graph_score == 0.75
-        assert response.items[0].tms_score == 1.0
         assert response.items[0].has_contacts is False
         assert response.items[0].contacts is None
         assert response.items[0].subscribers_count == 10000
@@ -458,21 +444,30 @@ class TestSearchService:
         assert response.query_metadata.original_query == "test query"
         assert response.query_metadata.dense_query == "test query"
         assert response.query_metadata.graph_entities == ["entity1"]
-        assert response.query_metadata.target_iab_ids == ["IAB1"]
         assert response.query_metadata.resolved_profile_type == "expert"
         assert response.confidence_level == "HIGH"
         assert response.warning_message is None
 
         mock_query_parser.parse.assert_awaited_once_with(request)
-        mock_retriever.retrieve_vector_candidates.assert_awaited_once_with(dense_query="test query")
+        mock_retriever.retrieve_vector_candidates.assert_awaited_once_with(
+            dense_query="test query", is_author_blog=True
+        )
         mock_graph_reasoner.reason_author_evidences.assert_awaited_once()
         mock_dbsf_engine.rank_candidates.assert_called_once_with(
             vector_aggregates=vector_aggregates,
             graph_evidences=graph_evidences,
+            match_type="direct",
+            affinity_reason=None,
+            target_languages=[],
+            target_tone=None,
+            target_hormones=None,
         )
         mock_hydrator.hydrate_and_filter_candidates.assert_awaited_once_with(
-            candidates=scored_candidates,
-            request=request,
+            direct_candidates=scored_candidates,
+            affinity_candidates=[],
+            request=request.model_copy(update={"countries": None, "gender": "both"}),
+            direct_limit=20,
+            affinity_limit=20,
         )
 
     @pytest.mark.asyncio

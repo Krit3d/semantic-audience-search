@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, Briefcase, Download, Eye, FileText, ImageOff, Loader2, MessageSquare, Paperclip, Plus, Search, Send, X } from 'lucide-react';
+import { Archive, ArchiveRestore, Briefcase, Check, ChevronDown, Download, Eye, FileText, ImageOff, Loader2, Paperclip, Plus, Search, Send, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SocialIcon } from '../components/icons';
 import { Avatar, Badge, Btn, Card, inputCls, Modal, Tip, useToast } from '../components/ui';
@@ -15,7 +15,7 @@ const STAGE_TONES: Record<number, string> = {
   0: 'gray',
 };
 
-function getChannelBadge(channelType?: string | null): { label: string; tone: 'sky' | 'amber' | 'green' | 'gray' } {
+function getChannelBadge(channelType?: string | null): { label: string; tone: 'sky' | 'amber' | 'green' | 'violet' } {
   switch (channelType?.toLowerCase()) {
     case 'telegram':
       return { label: 'Канал: Telegram', tone: 'sky' };
@@ -23,16 +23,38 @@ function getChannelBadge(channelType?: string | null): { label: string; tone: 's
       return { label: 'Канал: E-mail', tone: 'amber' };
     case 'whatsapp':
       return { label: 'Канал: WhatsApp', tone: 'green' };
+    case 'instagram':
     default:
-      return { label: 'Внутренний чат', tone: 'gray' };
+      return { label: 'Канал: Instagram', tone: 'violet' };
   }
 }
+
+function formatChannelName(channelType?: string | null): string {
+  switch (channelType?.toLowerCase()) {
+    case 'internal':
+    case '': return 'Instagram Direct';
+    case 'telegram': return 'Telegram';
+    case 'instagram': return 'Instagram Direct';
+    case 'email': return 'E-mail';
+    case 'whatsapp': return 'WhatsApp';
+    default: return channelType || 'Instagram Direct';
+  }
+}
+
+const channelToneClasses: Record<string, string> = {
+  telegram: 'border-sky-200 bg-sky-50 text-sky-700',
+  instagram: 'border-violet-200 bg-violet-50 text-violet-700',
+  email: 'border-amber-200 bg-amber-50 text-amber-700',
+  whatsapp: 'border-green-200 bg-green-50 text-green-700',
+};
 
 export type CommsMessage = DealMsg & {
   media_url?: string | null;
   media_name?: string | null;
   media_type?: string | null;
 };
+
+const channelKey = (channel: CommunicationChannelItem): string => channel.id || `${channel.author_id}:${channel.channel_type}`;
 
 function ChatImage({ src, alt }: { src: string; alt?: string }) {
   const [failed, setFailed] = useState(false);
@@ -145,7 +167,10 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
   const toast = useToast();
   const [channels, setChannels] = useState<CommunicationChannelItem[]>([]);
   const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
+  const [activeChannelType, setActiveChannelType] = useState<string>('instagram');
   const [msgs, setMsgs] = useState<CommsMessage[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [q, setQ] = useState('');
   const [chatTab, setChatTab] = useState<'active' | 'archived'>('active');
@@ -155,6 +180,16 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
   const [attachedFile, setAttachedFile] = useState<FileUploadResponse | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [channelMenuOpen, setChannelMenuOpen] = useState(false);
+  const channelMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (channelMenuRef.current && !channelMenuRef.current.contains(event.target as Node)) setChannelMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,7 +200,7 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
           const target = items.find(c => String(c.author_id) === String(initialAuthorId));
           if (target) {
             setChannels(items);
-            setSelectedAuthorId(String(initialAuthorId));
+            setSelectedAuthorId(String(target.author_id));
             setChatTab(target.is_archived ? 'archived' : 'active');
           } else {
             api.initCommunication(initialAuthorId)
@@ -182,6 +217,7 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
                     if (cancelled) return;
                     const isArchived = profile.status === 'В архиве' || profile.status === 'ARCHIVED';
                     const temp: CommunicationChannelItem = {
+                      id: `${initialAuthorId}:instagram`,
                       deal_id: null,
                       author_id: initialAuthorId,
                       author_name: profile.title,
@@ -193,10 +229,10 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
                       last_message_time: new Date().toISOString(),
                       unread_count: 0,
                       is_archived: isArchived,
-                      channel_type: 'internal',
+                      channel_type: 'instagram',
                     };
                     setChannels([temp, ...items]);
-                    setSelectedAuthorId(String(initialAuthorId));
+                    setSelectedAuthorId(String(temp.author_id));
                     setChatTab(isArchived ? 'archived' : 'active');
                   })
                   .catch(() => {
@@ -217,25 +253,31 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
     return () => { cancelled = true; };
   }, [initialAuthorId]);
 
+  const uniqueChannels = useMemo(() => Array.from(new Map(channels.map(channel => [String(channel.author_id), channel])).values()), [channels]);
+
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return channels.filter(c => {
+    return uniqueChannels.filter(c => {
       if (chatTab === 'active' ? c.is_archived : !c.is_archived) return false;
       if (!s) return true;
       return c.author_name.toLowerCase().includes(s) || c.author_handle.toLowerCase().includes(s);
     });
-  }, [channels, q, chatTab]);
+  }, [uniqueChannels, q, chatTab]);
 
   const activeCount = useMemo(() => channels.filter(c => !c.is_archived).length, [channels]);
   const archivedCount = useMemo(() => channels.filter(c => c.is_archived).length, [channels]);
 
-  const ch = filtered.find(c => String(c.author_id) === String(selectedAuthorId)) ?? filtered[0] ?? null;
+  const ch = filtered.find(c => String(c.author_id) === selectedAuthorId) ?? filtered[0] ?? null;
   const a = ch ? channelAuthor(ch) : null;
   const targetDeal = ch ? deals.find(d => (d.authorId === String(ch.author_id) || d.id === String(ch.deal_id)) && d.stage >= 1 && d.stage <= 6) : undefined;
   const activeDeals = ch ? deals.filter(d => (d.authorId === String(ch.author_id) || d.id === String(ch.deal_id)) && d.stage >= 1 && d.stage <= 6) : [];
   const activeBudget = activeDeals.reduce((a, d) => a + d.budget, 0);
 
   const chatRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setActiveChannelType(ch?.channel_type && ch.channel_type !== 'internal' ? ch.channel_type : 'instagram');
+  }, [ch?.author_id]);
 
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' });
@@ -245,11 +287,16 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
     if (!ch) return;
     const authorId = String(ch.author_id);
     let isMounted = true;
+    setMsgs([]);
+    setMessagesLoading(true);
+    setMessagesError(null);
 
     const fetchMessages = () => {
-      api.getCreatorMessages(authorId)
+      api.getCreatorMessages(authorId, activeChannelType)
         .then(items => {
           if (!isMounted) return;
+          setMessagesLoading(false);
+          setMessagesError(null);
           const mapped = items.map(toDealMsg);
           setMsgs(prev => {
             if (prev.length === mapped.length && prev[prev.length - 1]?.id === mapped[mapped.length - 1]?.id) {
@@ -260,7 +307,7 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
           if (items.length > 0) {
             const last = items[items.length - 1];
             setChannels(prev => prev.map(c => {
-              if (String(c.author_id) !== authorId) return c;
+              if (channelKey(c) !== channelKey(ch)) return c;
               return {
                 ...c,
                 last_message: last.text || '',
@@ -270,7 +317,11 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
             }));
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!isMounted) return;
+          setMessagesLoading(false);
+          setMessagesError('Не удалось загрузить сообщения');
+        });
     };
 
     fetchMessages();
@@ -280,7 +331,7 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
       isMounted = false;
       clearInterval(timer);
     };
-  }, [ch?.author_id]);
+  }, [ch?.author_id, activeChannelType]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -302,11 +353,11 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
     const file = attachedFile;
     setDraft('');
     setAttachedFile(null);
-    api.sendCreatorMessage(String(ch.author_id), text || null, 'user', file ? { media_url: file.media_url, media_name: file.media_name, media_type: file.media_type } : undefined)
+    api.sendCreatorMessage(String(ch.author_id), text || null, 'user', file ? { media_url: file.media_url, media_name: file.media_name, media_type: file.media_type } : undefined, activeChannelType)
       .then(m => {
         const dm = toDealMsg(m);
         setMsgs(prev => [...prev, dm]);
-        setChannels(prev => prev.map(c => String(c.author_id) === String(ch.author_id) ? { ...c, last_message: dm.text, last_message_time: m.created_at } : c));
+        setChannels(prev => prev.map(c => channelKey(c) === channelKey(ch) ? { ...c, last_message: dm.text, last_message_time: m.created_at } : c));
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'Не удалось отправить сообщение';
@@ -314,10 +365,10 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
       });
   };
 
-  const handleStartChat = (targetId: string) => {
-    api.initCommunication(targetId)
+  const handleStartChat = (targetId: string, channelType?: string) => {
+    api.initCommunication(targetId, channelType)
       .then(channel => {
-        setChannels(prev => prev.some(c => String(c.author_id) === String(channel.author_id)) ? prev : [channel, ...prev]);
+        setChannels(prev => prev.some(c => channelKey(c) === channelKey(channel)) ? prev.map(c => channelKey(c) === channelKey(channel) ? channel : c) : [channel, ...prev]);
         setSelectedAuthorId(String(channel.author_id));
         setNewChatOpen(false);
         setChatTab('active');
@@ -382,15 +433,15 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
             const ca = channelAuthor(c);
             return (
               <button key={String(c.author_id)} onClick={() => setSelectedAuthorId(String(c.author_id))}
-                className={'flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-left transition-colors ' + (String(selectedAuthorId) === String(c.author_id) ? 'bg-indigo-50' : 'hover:bg-slate-50')}>
+                className={'flex items-center gap-2.5 py-2.5 rounded-xl text-left transition-colors ' + (selectedAuthorId === String(c.author_id) ? 'bg-indigo-50' : 'hover:bg-slate-50')}>
                 <Avatar nick={ca.nick} hue={ca.hue} size={36} />
                 <span className="min-w-0 flex-1">
-                  <span className={'flex items-center justify-between ' + (String(selectedAuthorId) === String(c.author_id) ? 'text-indigo-700' : 'text-gray-800')}>
+                    <span className={'flex items-center justify-between ' + (selectedAuthorId === String(c.author_id) ? 'text-indigo-700' : 'text-gray-800')}>
                     <span className="text-[13px] font-bold truncate">{ca.nick}</span>
                     <span className="text-[10px] font-bold text-gray-300 shrink-0">{formatMessageTime(c.last_message_time)}</span>
                   </span>
                   <span className="flex items-center gap-1.5 mt-0.5">
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-gray-500 shrink-0">{getChannelBadge(c.channel_type).label}</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-gray-500 shrink-0">{formatChannelName(c.channel_type)}</span>
                     <span className="text-[11.5px] font-medium text-gray-400 truncate">{c.last_message}</span>
                   </span>
                 </span>
@@ -408,7 +459,32 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
             <div className="flex items-center gap-2"><span className="text-[14px] font-bold text-gray-900 truncate">{a?.nick ?? ''}</span>{a && <SocialIcon social={a.social} size={13} />}</div>
             {Boolean(ch?.deal_title) && <div className="text-[11px] font-semibold text-gray-400 truncate">Сделка: {ch?.deal_title}</div>}
             <div className="flex items-center gap-1.5 mt-0.5">
-              {ch && <Badge tone={getChannelBadge(ch.channel_type).tone}>{getChannelBadge(ch.channel_type).label}</Badge>}
+              {ch && <div ref={channelMenuRef} className="relative">
+                <button type="button" aria-expanded={channelMenuOpen} onClick={() => setChannelMenuOpen(open => !open)}
+                  className={'rounded-lg border px-2.5 py-1 text-[12px] font-semibold flex items-center gap-1.5 transition-colors ' + (channelToneClasses[activeChannelType.toLowerCase()] || 'border-gray-200 bg-gray-50 text-gray-700')}>
+                  {formatChannelName(activeChannelType)}
+                  {activeChannelType.toLowerCase() === 'telegram' && <span className="rounded-md border border-emerald-200/80 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Рекомендуется</span>}
+                  <ChevronDown size={13} className={'transition-transform ' + (channelMenuOpen ? 'rotate-180' : '')} />
+                </button>
+                {channelMenuOpen && (() => {
+                  const available = (ch.available_channels ?? []).filter(option => option.channel_type && option.channel_type.toLowerCase() !== 'internal');
+                  const options = Array.from(new Map((available.length ? available : [{ channel_type: 'instagram' }]).map(option => [option.channel_type.toLowerCase(), option])).values());
+                  return <div className="absolute top-full left-0 mt-1 z-30 min-w-[210px] bg-white rounded-xl shadow-lg border border-gray-150 py-1">
+                    <div className="text-[10px] uppercase font-bold text-gray-400 px-3 py-1">Способ связи</div>
+                    {options.map(option => <button key={option.channel_type} type="button" className="w-full flex items-center justify-between px-3 py-2 text-[12.5px] font-semibold text-left transition-colors hover:bg-slate-50"
+                      onClick={() => {
+                        setActiveChannelType(option.channel_type);
+                        setChannelMenuOpen(false);
+                      }}>
+                      <span>{formatChannelName(option.channel_type)}</span>
+                      <span className="flex items-center gap-2">
+                        {option.channel_type.toLowerCase() === 'telegram' && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Рекомендуется</span>}
+                        {option.channel_type.toLowerCase() === activeChannelType.toLowerCase() && <Check size={14} className="text-indigo-600" />}
+                      </span>
+                    </button>)}
+                  </div>;
+                })()}
+              </div>}
               {targetDeal ? (
                 <Badge tone={STAGE_TONES[targetDeal.stage] ?? 'gray'} dot>{getStage(targetDeal.stage).name}</Badge>
               ) : ch?.is_archived ? (
@@ -442,7 +518,9 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
           </div>
         </div>
         <div ref={chatRef} className="flex-1 min-h-0 overflow-y-auto scroll-thin p-5 flex flex-col gap-3">
-          {!msgs.some(m => m.from === 'user' || m.from === 'author') && <div className="m-auto text-[12.5px] font-semibold text-gray-400">Начните диалог — автор увидит сообщение в {a?.social ?? ''}</div>}
+          {messagesLoading && msgs.length === 0 && <div className="m-auto flex items-center gap-2 text-[12.5px] font-semibold text-gray-400"><Loader2 size={16} className="animate-spin" />Загрузка сообщений…</div>}
+          {messagesError && msgs.length === 0 && <button type="button" onClick={() => ch && api.getCreatorMessages(String(ch.author_id), activeChannelType).then(items => { setMsgs(items.map(toDealMsg)); setMessagesError(null); }).catch(() => setMessagesError('Не удалось загрузить сообщения'))} className="m-auto text-[12.5px] font-semibold text-rose-500">{messagesError} · Повторить</button>}
+          {!messagesLoading && !messagesError && !msgs.some(m => m.from === 'user' || m.from === 'author') && <div className="m-auto text-center text-[12.5px] font-semibold text-gray-400">{ch ? `Начните диалог — автор получит сообщение в ${formatChannelName(activeChannelType)}` : 'Начните диалог'}</div>}
           {msgs.map(m => {
             if (m.from === 'system') {
               return (
@@ -537,7 +615,7 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
 function NewChatModal({ channels, onClose, onStart }: {
   channels: CommunicationChannelItem[];
   onClose: () => void;
-  onStart: (id: string) => void;
+  onStart: (authorId: string, channelType?: string) => void;
 }) {
   const [creators, setCreators] = useState<CreatorRecord[]>([]);
   const [q, setQ] = useState('');
@@ -574,7 +652,12 @@ function NewChatModal({ channels, onClose, onStart }: {
         {!loading && list.length === 0 && <div className="text-center text-[13px] font-semibold text-gray-400 py-10">Авторы не найдены</div>}
         {list.map(creator => {
           const id = String(creator.accountid || creator.accountId || creator.id || creator.username || creator.handle || '');
-          const hasChat = channels.some(c => String(c.author_id) === id);
+          const contacts = [
+            ...(creator.telegram_commercial || creator.telegram_personal ? [{ channel_type: 'telegram', target: creator.telegram_commercial || creator.telegram_personal || '' }] : []),
+            ...(creator.email ? [{ channel_type: 'email', target: creator.email }] : []),
+            ...(creator.phone ? [{ channel_type: 'whatsapp', target: creator.phone }] : []),
+            ...(creator.instagram || creator.username || creator.handle ? [{ channel_type: 'instagram', target: creator.instagram || creator.username || creator.handle || '' }] : []),
+          ];
           const nick = creator.name || creator.Name || creator.handle || creator.username || 'Без имени';
           const social = normalizeSocial(creator.platform || creator.Platform || 'Instagram');
           const followers = Number(creator.followers ?? creator.subscribers_count ?? 0);
@@ -589,11 +672,16 @@ function NewChatModal({ channels, onClose, onStart }: {
                 </div>
                 <div className="text-[11.5px] font-semibold text-gray-400">{social} · {fmtBig(followers)} подписчиков</div>
               </div>
-              {hasChat ? (
-                <Badge tone="gray">Чат начат</Badge>
-              ) : (
-                <Btn size="sm" onClick={() => onStart(id)}><MessageSquare size={13} />Написать</Btn>
-              )}
+              <div className="flex flex-wrap justify-end gap-1">
+                {contacts.map(contact => {
+                  const exists = channels.some(channel => String(channel.author_id) === id && channel.channel_type === contact.channel_type);
+                  return <button key={contact.channel_type} type="button" onClick={() => onStart(id, contact.channel_type)}
+                    className="rounded-lg border border-gray-200 px-2 py-1 text-[10px] font-semibold text-gray-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700">
+                    {exists ? 'Открыть' : 'В'} {getChannelBadge(contact.channel_type).label.replace('Канал: ', '')}
+                  </button>;
+                })}
+                {contacts.length === 0 && <Badge tone="gray">Нет контактов</Badge>}
+              </div>
             </div>
           );
         })}

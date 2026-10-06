@@ -480,14 +480,28 @@ async def crm_delete_creator(
 ) -> dict[str, str]:
     async with db.async_session() as session:
         account = await resolve_account(session, crm_client, creator_id, current_user.email)
-        if account is not None:
-            await session.execute(
-                delete(UserShortlist).where(
-                    UserShortlist.user_id == current_user.id,
-                    UserShortlist.account_id == account.id,
-                )
+        if account is None:
+            raise HTTPException(status_code=404, detail="Автор не найден")
+        ownership_proven = False
+        for model in (UserShortlist, Deal, CreatorMessage):
+            result = await session.execute(
+                select(model.user_id).where(
+                    model.user_id == current_user.id,
+                    model.account_id == account.id,
+                ).limit(1)
             )
-            await session.commit()
+            if result.scalar_one_or_none() is not None:
+                ownership_proven = True
+                break
+        if not ownership_proven:
+            raise HTTPException(status_code=404, detail="Автор не найден")
+        await session.execute(
+            delete(UserShortlist).where(
+                UserShortlist.user_id == current_user.id,
+                UserShortlist.account_id == account.id,
+            )
+        )
+        await session.commit()
     try:
         await crm_client.delete_creator(creator_id, current_user.email)
     except Exception:
@@ -596,6 +610,7 @@ async def get_creator_detail(
 @router.get("/creators/{creator_id}/messages", response_model=list[CreatorMessageItem])
 async def get_creator_messages(
     creator_id: str,
+    channel_type: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Database = Depends(get_db),
     crm_client: TwentyCrmClient = Depends(get_crm_client),
@@ -614,6 +629,8 @@ async def get_creator_messages(
             )
             .values(is_read=True)
         )
+        if channel_type:
+            update_stmt = update_stmt.where(CreatorMessage.channel_type == channel_type.lower())
         await session.execute(update_stmt)
         await session.commit()
         msg_stmt = (
@@ -624,6 +641,8 @@ async def get_creator_messages(
             )
             .order_by(CreatorMessage.created_at.asc())
         )
+        if channel_type:
+            msg_stmt = msg_stmt.where(func.lower(CreatorMessage.channel_type) == channel_type.lower())
         msg_result = await session.execute(msg_stmt)
         messages = list(msg_result.scalars().all())
         return [message_item(message) for message in messages]
@@ -655,13 +674,15 @@ async def send_creator_message(
         )
         deal_result = await session.execute(deal_stmt)
         deal = deal_result.scalar_one_or_none()
-        resolution = ContactResolver.resolve(account.raw_metadata, account.username)
         if payload.preferred_channel:
-            target_channel = payload.preferred_channel
-            target_handle = resolve_target_for_channel(account, target_channel) or resolution.channel_target
+            target_channel = payload.preferred_channel.lower()
+            target_handle = ContactResolver.resolve_channel_target(account.raw_metadata, account.username, target_channel)
+            if not target_handle:
+                target_handle = resolve_target_for_channel(account, target_channel) or ""
         else:
-            target_channel = resolution.channel_type
-            target_handle = resolution.channel_target
+            resolution = ContactResolver.resolve(account.raw_metadata, account.username)
+            target_channel = resolution.channel_type if resolution.channel_type else (account.platform.lower() if account.platform else "instagram")
+            target_handle = resolution.channel_target if resolution.channel_target else (f"@{account.username.lstrip('@')}" if account.username else "")
         message = CreatorMessage(
             user_id=current_user.id,
             account_id=account.id,

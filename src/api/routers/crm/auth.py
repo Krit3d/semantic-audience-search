@@ -31,6 +31,8 @@ async def crm_login(
         user = result.scalar_one_or_none()
 
     if user is not None and bool(user.password_hash):
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="Учетная запись деактивирована")
         if not verify_password(payload.password, user.password_hash):
             raise HTTPException(status_code=401, detail="Неверный email или пароль")
         access_token = create_access_token(
@@ -48,7 +50,7 @@ async def crm_login(
         raise HTTPException(status_code=401, detail="Неверный email или пароль")
     except Exception as exc:
         logger.exception("Twenty login failed")
-        raise HTTPException(status_code=500, detail=f"Twenty service error: {exc}")
+        raise HTTPException(status_code=502, detail="Ошибка внешнего сервиса авторизации") from exc
     token = data.get("token")
     user_data = data.get("user")
     if not isinstance(token, str) or not token or not isinstance(user_data, dict):

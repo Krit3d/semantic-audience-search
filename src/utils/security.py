@@ -4,6 +4,7 @@ import hmac
 import json
 import secrets
 import time
+import math
 from typing import Any
 
 LEGACY_PBKDF2_ITERATIONS = 100_000
@@ -76,8 +77,21 @@ def decode_access_token(token: str, secret_key: str) -> dict[str, Any] | None:
         if not hmac.compare_digest(actual, expected):
             return None
         payload = json.loads(_b64url_decode(payload_b64))
+        if not isinstance(payload, dict):
+            return None
         exp = payload.get("exp")
-        if isinstance(exp, (int, float)) and exp < time.time():
+        issued_at = payload.get("iat")
+        if (
+            isinstance(exp, bool)
+            or not isinstance(exp, (int, float))
+            or not math.isfinite(exp)
+            or isinstance(issued_at, bool)
+            or not isinstance(issued_at, (int, float))
+            or not math.isfinite(issued_at)
+            or exp < time.time()
+            or payload.get("user_id") is None
+            or payload.get("user_id") == ""
+        ):
             return None
         return payload
     except (ValueError, TypeError, json.JSONDecodeError):

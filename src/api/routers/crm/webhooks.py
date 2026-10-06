@@ -1,8 +1,12 @@
 import json
 import logging
+import ipaddress
+import secrets
+import socket
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -13,8 +17,11 @@ from src.api.services.crm_helpers import detect_media_type
 from src.config.config import MEDIA_DIR, Settings
 from src.db.database import Database
 from src.db.models import Account, CreatorMessage, Deal, User
+from src.utils.url_security import is_allowed_destination
 
 logger = logging.getLogger(__name__)
+MAX_WEBHOOK_BODY = 1 * 1024 * 1024
+MAX_WEBHOOK_MEDIA = 20 * 1024 * 1024
 
 router = APIRouter(prefix="/webhooks", tags=["CRM Webhooks"])
 
@@ -23,14 +30,35 @@ async def _save_webhook_media(
     remote_url: str, filename: str, settings: Settings
 ) -> tuple[str | None, str | None, str | None]:
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.get(remote_url)
+        parsed = urlsplit(remote_url)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            return (None, None, None)
+        if not is_allowed_destination(remote_url, getattr(settings, "webhook_media_allowed_hosts", [])):
+            return (None, None, None)
+        addresses = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
+        if not addresses or any(not ipaddress.ip_address(item[4][0]).is_global for item in addresses):
+            return (None, None, None)
+    except (ValueError, OSError):
+        return (None, None, None)
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+            async with client.stream("GET", remote_url) as resp:
+                if resp.status_code != 200:
+                    return (None, None, None)
+                length = resp.headers.get("content-length")
+                if length and int(length) > MAX_WEBHOOK_MEDIA:
+                    return (None, None, None)
+                chunks = []
+                size = 0
+                async for chunk in resp.aiter_bytes():
+                    size += len(chunk)
+                    if size > MAX_WEBHOOK_MEDIA:
+                        return (None, None, None)
+                    chunks.append(chunk)
+                content = b"".join(chunks)
+                content_type = resp.headers.get("content-type")
     except Exception:
         return (None, None, None)
-    if resp.status_code != 200:
-        return (None, None, None)
-    content = resp.content
-    content_type = resp.headers.get("content-type")
     extension = Path(filename).suffix.lower()
     media_type = detect_media_type(extension)
     if content_type:
@@ -39,6 +67,10 @@ async def _save_webhook_media(
         elif content_type.startswith("video/"):
             media_type = "video"
     if settings.media_bridge_url:
+        if not is_allowed_destination(
+            settings.media_bridge_url, getattr(settings, "media_bridge_allowed_hosts", [])
+        ):
+            return (None, None, None)
         headers = {}
         if settings.media_bridge_secret:
             headers["X-Bridge-Secret"] = settings.media_bridge_secret
@@ -71,9 +103,24 @@ async def inbound_webhook(
 ) -> dict[str, str]:
     settings = request.app.state.settings
     secret = request.headers.get("x-webhook-secret")
-    if secret and settings.bridgit_api_key and secret != settings.bridgit_api_key:
+    if not settings.bridgit_api_key or not secret or not secrets.compare_digest(secret, settings.bridgit_api_key):
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
-    raw_body = await request.body()
+    try:
+        declared_length = int(request.headers.get("content-length", "0") or 0)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid Content-Length")
+    if declared_length < 0:
+        raise HTTPException(status_code=400, detail="Invalid Content-Length")
+    if declared_length > MAX_WEBHOOK_BODY:
+        raise HTTPException(status_code=413, detail="Webhook body too large")
+    body_chunks: list[bytes] = []
+    body_size = 0
+    async for chunk in request.stream():
+        body_size += len(chunk)
+        if body_size > MAX_WEBHOOK_BODY:
+            raise HTTPException(status_code=413, detail="Webhook body too large")
+        body_chunks.append(chunk)
+    raw_body = b"".join(body_chunks)
     try:
         payload = json.loads(raw_body.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):

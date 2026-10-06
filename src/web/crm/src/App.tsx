@@ -27,6 +27,28 @@ const screenFromHash = (): Screen => {
   return SCREENS.includes(path as Screen) ? (path as Screen) : 'authors';
 };
 
+const getRedirectTarget = (): string | null => {
+  const fromSearch = new URLSearchParams(window.location.search).get('redirect');
+  if (fromSearch) return fromSearch;
+  const hash = window.location.hash;
+  const q = hash.indexOf('?');
+  if (q !== -1) {
+    const fromHash = new URLSearchParams(hash.slice(q + 1)).get('redirect');
+    if (fromHash) return fromHash;
+  }
+  return null;
+};
+
+const buildRedirectUrl = (redirectTarget: string, token: string, user: Record<string, unknown> | null): string => {
+  const target = new URL(redirectTarget, window.location.origin);
+  target.searchParams.set('session_token', token);
+  const userId = user?.id;
+  if (userId !== undefined && userId !== null) target.searchParams.set('user_id', String(userId));
+  const userEmail = user?.email;
+  if (userEmail !== undefined && userEmail !== null) target.searchParams.set('user_email', String(userEmail));
+  return target.toString();
+};
+
 const dealIdFromHash = (): string | null => {
   const hash = window.location.hash;
   const q = hash.indexOf('?');
@@ -483,9 +505,21 @@ export default function App() {
     return () => window.removeEventListener('creatorflow:auth_expired', onAuthExpired);
   }, []);
 
+  useEffect(() => {
+    if (!api.isAuthenticated()) return;
+    const redirectTarget = getRedirectTarget();
+    if (!redirectTarget) return;
+    window.location.href = buildRedirectUrl(redirectTarget, api.getToken(), api.getCurrentUser());
+  }, []);
+
   const handleLogin = (loggedIn: Record<string, unknown>) => {
     setUser(loggedIn);
     setAuthed(true);
+    const redirectTarget = getRedirectTarget();
+    if (redirectTarget) {
+      window.location.href = buildRedirectUrl(redirectTarget, api.getToken(), loggedIn);
+      return;
+    }
     window.location.hash = '#/authors';
   };
 

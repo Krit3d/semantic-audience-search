@@ -459,6 +459,8 @@ class Settings(BaseSettings):
     email_outreach_enabled: bool = Field(default=True)
     media_bridge_url: str | None = Field(default=None, description="Internal URL of the German media bridge, e.g. http://100.x.y.z:8090")
     media_bridge_secret: str | None = Field(default=None, description="Secret token for media bridge authentication")
+    media_bridge_allowed_hosts: list[str] = Field(default_factory=list, description="Exact hostnames allowed for media bridge forwarding")
+    webhook_media_allowed_hosts: list[str] = Field(default_factory=list, description="Exact hostnames allowed for webhook attachment downloads")
 
     # ---- Bridgit.me integration settings ----
     bridgit_api_key: str | None = Field(default=None, description="Bridgit API key")

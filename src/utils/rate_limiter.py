@@ -11,17 +11,8 @@ class InMemoryRateLimiter:
         self._cleanup_interval: float = 300.0
 
     def get_client_ip(self, request: Request) -> str:
-        real_ip = request.headers.get("x-real-ip")
-        if real_ip:
-            cleaned = real_ip.strip()
-            if cleaned:
-                return cleaned
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            parts = forwarded.split(",")
-            candidate = parts[-1].strip() if len(parts) > 1 else parts[0].strip()
-            if candidate:
-                return candidate
+        # Forwarded headers are client-controlled unless a trusted proxy layer
+        # has already sanitized them. Use the transport peer until that is configured.
         client = request.client
         if client is not None and client.host:
             return client.host

@@ -325,7 +325,6 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
                   <div className="text-[13px] font-bold text-gray-900">Диалог с автором</div>
                   <div className="text-[11px] font-semibold text-gray-400">Связь с {a.nick} · {deal.msgs.length} сообщ.</div>
                 </div>
-                <Badge tone="indigo" className="shrink-0">Канал: Внутренний чат</Badge>
               </div>
               <div className="px-4 py-3 flex flex-col gap-2.5">
                 {deal.msgs.slice(-3).map(m => (

@@ -463,14 +463,14 @@ class CrmShortlistResponse(BaseModel):
 
 
 class CrmLoginRequest(BaseModel):
-    email: str = Field(description="Email of the CRM user")
-    password: str = Field(description="Password of the CRM user")
+    email: str = Field(max_length=254, description="Email of the CRM user")
+    password: str = Field(min_length=1, max_length=128, description="Password of the CRM user")
 
 
 class CrmRegisterRequest(BaseModel):
-    email: str = Field(description="Email of the CRM user")
-    password: str = Field(description="Password of the CRM user")
-    name: str | None = Field(default=None, description="Display name of the CRM user")
+    email: str = Field(min_length=3, max_length=254, description="Email of the CRM user")
+    password: str = Field(min_length=8, max_length=128, description="Password of the CRM user")
+    name: str | None = Field(default=None, max_length=100, description="Display name of the CRM user")
 
 
 class CrmLoginResponse(BaseModel):
@@ -598,7 +598,14 @@ class CreatorSendMessageRequest(BaseModel):
     media_type: str | None = None
 
 
+class AvailableChannelItem(BaseModel):
+    channel_type: str
+    channel_target: str
+    role: str = "direct"
+
+
 class CommunicationChannelItem(BaseModel):
+    id: str
     deal_id: int | None = None
     author_id: str
     author_name: str
@@ -610,7 +617,22 @@ class CommunicationChannelItem(BaseModel):
     last_message_time: datetime
     unread_count: int
     is_archived: bool = False
+    channel_type: str
+    channel_target: str | None = None
+    available_channels: list[AvailableChannelItem] = Field(default_factory=list)
+
+
+class CommunicationInitRequest(BaseModel):
+    creator_id: str
     channel_type: str | None = None
+
+    @field_validator("channel_type")
+    @classmethod
+    def validate_channel_type(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"telegram", "email", "whatsapp", "instagram"}:
+            raise ValueError("Unsupported communication channel")
+        return normalized
 
 
 class CreatorPostItem(BaseModel):

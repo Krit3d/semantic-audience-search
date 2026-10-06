@@ -9,12 +9,8 @@ from src.api.schemas import (
     DealAuthorSummary,
 )
 from src.api.services.crm_client import TwentyCrmClient
+from src.api.services.contact_resolver import ContactResolver
 from src.db.models import Account, Content, CreatorMessage
-from src.parser.creators.core.contacts import (
-    is_valid_email,
-    is_valid_telegram_handle,
-    normalize_telegram_handle,
-)
 
 STATUS_UI_TO_CRM: dict[str, str] = {
     "Свободен": "SVOBODEN",
@@ -148,40 +144,7 @@ def detect_media_type(extension: str) -> str:
 
 
 def resolve_target_for_channel(account: Account, channel_type: str) -> str | None:
-    raw_metadata = account.raw_metadata if isinstance(account.raw_metadata, dict) else {}
-    contacts = raw_metadata.get("contacts", {})
-    if not isinstance(contacts, dict):
-        contacts = {}
-    if channel_type == "email":
-        items = contacts.get("emails")
-        if isinstance(items, list):
-            for cand in items:
-                if isinstance(cand, str) and is_valid_email(cand):
-                    return cand.strip().lower()
-        return None
-    if channel_type == "telegram":
-        items = contacts.get("telegrams")
-        if isinstance(items, list):
-            for cand in items:
-                if isinstance(cand, str) and is_valid_telegram_handle(cand):
-                    return f"@{normalize_telegram_handle(cand)}"
-        if account.platform == "TELEGRAM" and account.username:
-            return account.username
-        return None
-    if channel_type == "whatsapp":
-        items = contacts.get("phones")
-        if isinstance(items, list):
-            for cand in items:
-                if isinstance(cand, str):
-                    return cand.strip()
-        return None
-    if channel_type == "instagram":
-        if isinstance(account.username, str):
-            cleaned = account.username.lstrip("@").strip()
-            if cleaned:
-                return f"@{cleaned}"
-        return None
-    return None
+    return ContactResolver.resolve_channel_target(account.raw_metadata, account.username, channel_type)
 
 
 def post_type(content: Content, platform: str) -> str:

@@ -11,6 +11,9 @@ COPY src/web/crm/ ./
 ARG VITE_API_URL=/api/v1
 ENV VITE_API_URL=$VITE_API_URL
 
+ARG VITE_SEARCH_URL=https://collabrama.ru
+ENV VITE_SEARCH_URL=$VITE_SEARCH_URL
+
 RUN npm run build
 
 FROM nginx:alpine

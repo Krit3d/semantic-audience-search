@@ -11,6 +11,7 @@ from starlette.requests import Request
 from src.api.routers.crm import creators, media, webhooks
 from src.api.routers.search import authorize_contact_results, search_content
 from src.api.schemas import SearchRequest
+from src.db.models import User
 from src.utils.rate_limiter import InMemoryRateLimiter
 from src.utils import media_bridge
 from src.utils.security import _b64url_encode, decode_access_token
@@ -179,9 +180,9 @@ async def test_creator_delete_requires_local_user_ownership(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         await creators.crm_delete_creator(
             "creator-from-another-user",
-            SimpleNamespace(id=2, email="user-b@example.invalid"),
-            SimpleNamespace(async_session=lambda: Session()),
-            crm_client,
+            User(id=2, email="user-b@example.invalid", password_hash="synthetic-hash"),
+            SimpleNamespace(async_session=lambda: Session()),  # type: ignore[arg-type]
+            crm_client,  # type: ignore[arg-type]
         )
     assert exc.value.status_code == 404
     assert crm_client.deleted is False

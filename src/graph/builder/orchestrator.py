@@ -142,6 +142,7 @@ class KagBuilderOrchestrator:
                         worker_id=self._settings.worker_id,
                         total_workers=self._settings.total_workers,
                         priority_mode=self._settings.extraction_priority_mode,
+                        processing_batch=self._settings.processing_batch_id,
                     )
                     fetch_elapsed = time.perf_counter() - t0
 

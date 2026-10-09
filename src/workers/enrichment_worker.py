@@ -456,59 +456,71 @@ class EnrichmentWorker:
     async def _try_acquire_account(self) -> dict[str, Any] | None:
         async with self._acquire_lock:
             async with self._db.async_session() as session:
-                async with session.begin():
-                    stmt = (
-                        select(Account)
-                        .where(Account.status == "verified")
-                        .where(
-                            select(Content.id)
-                            .where(Content.account_id == Account.id)
-                            .where(Content.is_enriched == False)
-                            .exists()
-                        )
+                stmt = (
+                    select(Account.id, Account.title, Account.description, Account.is_author_blog)
+                    .where(Account.status == "verified")
+                    .where(
+                        select(Content.id)
+                        .where(Content.account_id == Account.id)
+                        .where(Content.is_enriched == False)
+                        .exists()
                     )
-                    if self._processing_ids:
-                        stmt = stmt.where(Account.id.notin_(self._processing_ids))
-                    stmt = stmt.limit(1)
-                    result = await session.execute(stmt)
-                    account = result.scalar_one_or_none()
-
-                    if account is None:
-                        return None
-
-                    account_id = account.id
-                    self._processing_ids.add(account_id)
-
-                    content_stmt = (
-                        select(Content)
-                        .where(Content.account_id == account_id)
-                        .order_by(Content.published_at.desc())
+                )
+                if self.settings.processing_batch_id is not None:
+                    stmt = stmt.where(
+                        Account.processing_batch == self.settings.processing_batch_id
                     )
-                    content_result = await session.execute(content_stmt)
-                    posts = list(content_result.scalars().all())
+                if self._processing_ids:
+                    stmt = stmt.where(Account.id.notin_(self._processing_ids))
+                stmt = stmt.limit(1)
+                result = await session.execute(stmt)
+                account = result.one_or_none()
 
-                    if not posts:
-                        self._processing_ids.discard(account_id)
-                        return None
+                if account is None:
+                    return None
 
-                    return {
-                        "account_id": account_id,
-                        "title": account.title,
-                        "description": account.description,
-                        "is_author_blog": account.is_author_blog,
-                        "posts_data": [
-                            {
-                                "id": p.id,
-                                "content": p.content,
-                                "transcription": p.transcription,
-                                "reactions_count": p.reactions_count,
-                                "comments_count": p.comments_count,
-                                "shares_count": p.shares_count,
-                                "views_count": p.views,
-                            }
-                            for p in posts
-                        ],
-                    }
+                account_id = account.id
+                self._processing_ids.add(account_id)
+
+        async with self._db.async_session() as session:
+            content_stmt = (
+                select(
+                    Content.id,
+                    Content.content,
+                    Content.transcription,
+                    Content.reactions_count,
+                    Content.comments_count,
+                    Content.shares_count,
+                    Content.views,
+                )
+                .where(Content.account_id == account_id)
+                .order_by(Content.published_at.desc())
+            )
+            content_result = await session.execute(content_stmt)
+            posts = content_result.all()
+
+        if not posts:
+            self._processing_ids.discard(account_id)
+            return None
+
+        return {
+            "account_id": account_id,
+            "title": account.title,
+            "description": account.description,
+            "is_author_blog": account.is_author_blog,
+            "posts_data": [
+                {
+                    "id": p.id,
+                    "content": p.content,
+                    "transcription": p.transcription,
+                    "reactions_count": p.reactions_count,
+                    "comments_count": p.comments_count,
+                    "shares_count": p.shares_count,
+                    "views_count": p.views,
+                }
+                for p in posts
+            ],
+        }
 
     async def _process_single_unit(self) -> bool:
         account_data = await self._try_acquire_account()
@@ -542,19 +554,31 @@ class EnrichmentWorker:
         static_avg_er: float | None = None
 
         try:
+            tasks: dict[str, asyncio.Task[Any]] = {}
             if self.settings.enrichment_enable_demographics or self.settings.enrichment_enable_explanation:
-                llm_result = await self._generate_enrichment(context)
-                if llm_result is None:
-                    logger.error("Skipping save for account %d due to failed LLM generation. Will retry later.", account_id)
-                    self._processing_ids.discard(account_id)
-                    return True
-
+                tasks["enrichment"] = asyncio.create_task(self._generate_enrichment(context))
             if self.settings.enrichment_enable_categories:
-                category_id, category_path, category_extension = await self._identify_category(context)
-                if category_id is None:
-                    logger.error("Skipping enrichment save for account %d because category identification failed.", account_id)
-                    self._processing_ids.discard(account_id)
-                    return True
+                tasks["category"] = asyncio.create_task(self._identify_category(context))
+
+            if tasks:
+                results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+                for name, result in zip(tasks.keys(), results):
+                    if isinstance(result, Exception):
+                        raise result
+                    if name == "enrichment":
+                        llm_result = result
+                    else:
+                        category_id, category_path, category_extension = result
+
+            if "enrichment" in tasks and llm_result is None:
+                logger.error("Skipping save for account %d due to failed LLM generation. Will retry later.", account_id)
+                self._processing_ids.discard(account_id)
+                return True
+
+            if "category" in tasks and category_id is None:
+                logger.error("Skipping enrichment save for account %d because category identification failed.", account_id)
+                self._processing_ids.discard(account_id)
+                return True
 
             if self.settings.enrichment_enable_er:
                 static_avg_er = self._calculate_static_avg_er(posts_data)
@@ -581,29 +605,38 @@ class EnrichmentWorker:
         if self.settings.enrichment_enable_er:
             values["static_avg_er"] = static_avg_er
 
-        try:
-            async with self._db.async_session() as session:
-                async with session.begin():
-                    await session.execute(
-                        update(Account).where(Account.id == account_id).values(**values)
-                    )
+        saved = False
+        for save_attempt in range(1, 4):
+            try:
+                async with self._db.async_session() as session:
+                    async with session.begin():
+                        await session.execute(
+                            update(Account).where(Account.id == account_id).values(**values)
+                        )
 
-                    await session.execute(
-                        update(Content)
-                        .where(Content.account_id == account_id)
-                        .values(is_enriched=True, updated_at=now)
-                    )
+                        await session.execute(
+                            update(Content)
+                            .where(Content.account_id == account_id)
+                            .values(is_enriched=True, updated_at=now)
+                        )
 
-                    logger.info(
-                        "Enriched account %d: %s posts=%d",
-                        account_id,
-                        values,
-                        len(posts_data),
-                    )
-        except Exception:
-            logger.exception("Failed to save enrichment results for account %d", account_id)
-        finally:
-            self._processing_ids.discard(account_id)
+                        logger.info(
+                            "Enriched account %d: %s posts=%d",
+                            account_id,
+                            values,
+                            len(posts_data),
+                        )
+                saved = True
+                break
+            except Exception as e:
+                logger.warning(
+                    "Save attempt %d/3 failed for account %d: %s",
+                    save_attempt, account_id, e,
+                )
+                await asyncio.sleep(1.0 * save_attempt)
+        if not saved:
+            logger.error("Failed to save enrichment results for account %d after 3 attempts", account_id)
+        self._processing_ids.discard(account_id)
 
         return True
 

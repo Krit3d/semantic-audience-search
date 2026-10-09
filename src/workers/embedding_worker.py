@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import re
 import signal
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +21,11 @@ except ImportError:
 from src.config.config import Settings, load_settings
 from src.db.database import Database
 from src.db.models import Account, Content
+from src.embeddings.client import (
+    CATEGORIES_COLLECTION,
+    ENTITIES_COLLECTION,
+    POSTS_COLLECTION,
+)
 from src.embeddings.qdrant_service import QdrantService
 from src.embeddings.visual_service import VisualEmbeddingService
 from src.parser.creators.core.schemas import ContentMetadata
@@ -135,6 +141,7 @@ class EmbeddingWorker:
         settings: Settings,
         batch_size: int = 64,
         poll_interval: int = 5,
+        processing_batch: int | None = None,
     ) -> None:
         self.db = db
         self.qdrant = qdrant
@@ -142,19 +149,24 @@ class EmbeddingWorker:
         self.settings = settings
         self.batch_size = batch_size
         self.poll_interval = poll_interval
+        self.processing_batch = processing_batch
         self.priority_mode: bool = False
         self._shutdown_event = asyncio.Event()
+        self.stats: dict[str, Any] = {"embedded": 0, "skipped": 0, "embedded_ids": []}
 
     async def _fetch_unembedded_content(self, limit: int) -> list[Content]:
+        conditions = [
+            Content.is_embedded.is_(False),
+            Account.status == "verified",
+        ]
+        if self.processing_batch is not None:
+            conditions.append(Account.processing_batch == self.processing_batch)
         async with self.db.async_session() as session:
             result = await session.execute(
                 select(Content)
                 .options(selectinload(Content.account))
                 .join(Content.account)
-                .where(
-                    Content.is_embedded.is_(False),
-                    Account.status == "verified",
-                )
+                .where(*conditions)
                 .order_by(Content.id.desc() if self.priority_mode else Content.id.asc())
                 .limit(limit)
             )
@@ -204,6 +216,12 @@ class EmbeddingWorker:
 
         content_meta = self._safe_parse_content_metadata(post.raw_metadata)
 
+        account = post.account
+        if account and account.description:
+            cleaned_bio = self._clean_text(account.description)
+            if cleaned_bio:
+                parts.append(cleaned_bio)
+
         cleaned_content = ""
         if post.content:
             cleaned_content = self._clean_text(post.content)
@@ -227,18 +245,6 @@ class EmbeddingWorker:
             parts.append(cleaned_content)
         elif cleaned_transcription:
             parts.append(cleaned_transcription)
-
-        accessibility: str | None = None
-        if content_meta and content_meta.accessibility_caption:
-            accessibility = content_meta.accessibility_caption
-        elif post.raw_metadata:
-            cap = post.raw_metadata.get("accessibility_caption")
-            if isinstance(cap, str) and cap:
-                accessibility = cap
-        if accessibility:
-            cleaned_cap = self._clean_text(accessibility)
-            if cleaned_cap:
-                parts.append(cleaned_cap)
 
         hashtags: list[str] | None = None
         if content_meta and content_meta.hashtags:
@@ -297,6 +303,8 @@ class EmbeddingWorker:
             else:
                 engagement_rate = 0.0
 
+            published_at_ts: int | None = int(post.published_at.timestamp()) if post.published_at else None
+
             payload: dict[str, Any] = {
                 "post_id": post.id,
                 "account_id": post.account_id,
@@ -308,6 +316,7 @@ class EmbeddingWorker:
                 "shares_count": shares_count,
                 "reactions_count": reactions_count,
                 "engagement_rate": engagement_rate,
+                "published_at": published_at_ts,
                 "text": stripped_text,
             }
 
@@ -316,6 +325,7 @@ class EmbeddingWorker:
 
         if skip_ids:
             await self._mark_content_embedded(skip_ids)
+            self.stats["skipped"] += len(skip_ids)
             logger.debug(
                 "Marked %d posts as embedded (skipped due to insufficient text)",
                 len(skip_ids),
@@ -354,6 +364,8 @@ class EmbeddingWorker:
                 sub_ids = [p["post_id"] for p in sub_batch]
                 await self._mark_content_embedded(sub_ids)
                 total_embedded += len(sub_ids)
+                self.stats["embedded"] += len(sub_ids)
+                self.stats["embedded_ids"].extend(sub_ids)
                 logger.debug(
                     "Embedded sub-batch of %d items (%d/%d total)",
                     len(sub_ids),
@@ -386,10 +398,11 @@ class EmbeddingWorker:
 
     async def run(self) -> None:
         logger.info(
-            "Embedding worker started (batch_size=%d, poll_interval=%ds, priority_mode=%s)",
+            "Embedding worker started (batch_size=%d, poll_interval=%ds, priority_mode=%s, processing_batch=%s)",
             self.batch_size,
             self.poll_interval,
             self.priority_mode,
+            self.processing_batch if self.processing_batch is not None else "ALL(legacy)",
         )
 
         consecutive_errors = 0
@@ -457,10 +470,198 @@ class EmbeddingWorker:
 
         logger.info("Embedding worker stopped")
 
+    async def run_until_empty(self) -> dict[str, Any]:
+        logger.info(
+            "Embedding worker one-shot run started (processing_batch=%s)",
+            self.processing_batch if self.processing_batch is not None else "ALL(legacy)",
+        )
+        while not self._shutdown_event.is_set():
+            posts = await self._fetch_unembedded_content(limit=self.batch_size)
+            if not posts:
+                break
+            logger.info("Processing batch of %d unembedded content items", len(posts))
+            await self._process_batch(posts)
+        logger.info(
+            "One-shot run finished: embedded=%d skipped=%d",
+            self.stats["embedded"],
+            self.stats["skipped"],
+        )
+        return self.stats
+
+
+async def _dry_run_chunk(worker: EmbeddingWorker) -> None:
+    conditions = [
+        Content.is_embedded.is_(False),
+        Account.status == "verified",
+    ]
+    if worker.processing_batch is not None:
+        conditions.append(Account.processing_batch == worker.processing_batch)
+
+    total_posts = 0
+    author_ids: set[int] = set()
+    valid_posts = 0
+    skipped_posts = 0
+    last_id = 0
+    page_size = 2000
+
+    async with worker.db.async_session() as session:
+        total = (
+            await session.execute(
+                select(func.count(Content.id)).join(Content.account).where(*conditions)
+            )
+        ).scalar_one()
+
+    logger.info("DRY-RUN: scanning %d candidate posts...", total)
+
+    while True:
+        async with worker.db.async_session() as session:
+            result = await session.execute(
+                select(Content)
+                .options(selectinload(Content.account))
+                .join(Content.account)
+                .where(*conditions, Content.id > last_id)
+                .order_by(Content.id.asc())
+                .limit(page_size)
+            )
+            posts = list(result.scalars().all())
+        if not posts:
+            break
+        last_id = posts[-1].id
+        total_posts += len(posts)
+        for post in posts:
+            author_ids.add(post.account_id)
+            text_to_embed = worker._assemble_embedding_text(post).strip()
+            if len(text_to_embed) < _MIN_TEXT_LENGTH:
+                skipped_posts += 1
+            else:
+                valid_posts += 1
+        if total_posts % 10000 < page_size:
+            logger.info(
+                "DRY-RUN progress: %d/%d posts scanned (valid=%d skipped=%d)",
+                total_posts, total, valid_posts, skipped_posts,
+            )
+
+    logger.info("=" * 60)
+    logger.info("DRY-RUN (processing_batch=%s)", worker.processing_batch if worker.processing_batch is not None else "ALL(legacy)")
+    logger.info("  Authors in scope:            %d", len(author_ids))
+    logger.info("  Posts candidates:            %d", total_posts)
+    logger.info("  Posts to upsert (text ok):   %d", valid_posts)
+    logger.info("  Posts skipped (short text):  %d", skipped_posts)
+    logger.info("  Total matching DB filter:    %d", total)
+    logger.info("=" * 60)
+
+
+async def _create_qdrant_snapshot(qdrant: QdrantService) -> str:
+    snapshot = await qdrant.client.create_snapshot(collection_name=qdrant.collection_name)
+    snapshot_path = f"/qdrant/snapshots/{qdrant.collection_name}/{snapshot.name}"
+    logger.info("Qdrant snapshot created: %s (server-side path: %s)", snapshot.name, snapshot_path)
+    return snapshot_path
+
+
+async def _create_all_snapshots(qdrant: QdrantService) -> list[str]:
+    collections = [POSTS_COLLECTION, ENTITIES_COLLECTION, CATEGORIES_COLLECTION]
+    if qdrant.collection_name and qdrant.collection_name not in collections:
+        collections.append(qdrant.collection_name)
+    paths: list[str] = []
+    for name in collections:
+        try:
+            snapshot = await qdrant.client.create_snapshot(collection_name=name)
+            path = f"/qdrant/snapshots/{name}/{snapshot.name}"
+            paths.append(path)
+            logger.info("Snapshot for collection %s: %s", name, path)
+        except Exception as e:
+            logger.error("Failed to snapshot collection %s: %s", name, e)
+            raise
+    return paths
+
+
+async def _verify_after_run(
+    qdrant: QdrantService,
+    embedded_ids: list[int],
+    points_before: int,
+    sample_size: int = 5,
+) -> bool:
+    collection = await qdrant.client.get_collection(qdrant.collection_name)
+    points_after = collection.points_count or 0
+    logger.info(
+        "Verification: collection points before=%d after=%d delta=%d",
+        points_before,
+        points_after,
+        points_after - points_before,
+    )
+
+    ok = points_after >= points_before
+    if not ok:
+        logger.error("Verification FAILED: points count decreased (%d -> %d)", points_before, points_after)
+
+    sample_ids = embedded_ids[:sample_size]
+    if not sample_ids:
+        logger.warning("Verification: no embedded post ids to sample")
+        return ok
+
+    records = await qdrant.client.retrieve(
+        collection_name=qdrant.collection_name,
+        ids=sample_ids,
+        with_payload=True,
+        with_vectors=True,
+    )
+
+    expected_payload_keys = {
+        "post_id", "account_id", "platform", "subscribers_count",
+        "is_author_blog", "views", "comments_count", "shares_count",
+        "reactions_count", "engagement_rate", "published_at", "text",
+    }
+
+    for record in records:
+        payload = record.payload or {}
+        missing = expected_payload_keys - set(payload.keys())
+        vectors = record.vector if isinstance(record.vector, dict) else {}
+        dense = vectors.get("text")
+        dense_dim = len(dense) if isinstance(dense, list) else 0
+        sparse = vectors.get("text_sparse")
+        sparse_ok = sparse is not None and bool(getattr(sparse, "indices", None))
+        checks = {
+            "payload_complete": not missing,
+            "is_author_blog_set": payload.get("is_author_blog") is not None,
+            "dense_dim_1024": dense_dim == 1024,
+            "sparse_present": sparse_ok,
+        }
+        record_ok = all(checks.values())
+        ok = ok and record_ok
+        if record_ok:
+            logger.info("Verification: point %s OK (dense=%d, is_author_blog=%s)", record.id, dense_dim, payload.get("is_author_blog"))
+        else:
+            logger.error(
+                "Verification FAILED for point %s: %s (missing payload keys: %s)",
+                record.id,
+                checks,
+                sorted(missing) or "none",
+            )
+
+    found_ids = {int(r.id) for r in records}
+    for missing_id in set(sample_ids) - found_ids:
+        logger.error("Verification FAILED: point %s not found in collection", missing_id)
+        ok = False
+
+    logger.info("Verification %s", "PASSED" if ok else "FAILED")
+    return ok
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Embedding worker (PostgreSQL -> Qdrant social_posts)")
+    parser.add_argument("--dry-run", action="store_true", help="Only count authors/posts/points in scope; no writes")
+    parser.add_argument("--snapshot", action="store_true", help="Create a Qdrant collection snapshot before processing")
+    parser.add_argument("--once", action="store_true", help="Process until the queue is empty, then exit")
+    parser.add_argument("--verify", action="store_true", help="After a --once run, verify collection counts and sample N=5 new points")
+    parser.add_argument("--batch-id", type=int, default=None, help="Override PROCESSING_BATCH_ID for this run")
+    return parser.parse_args(argv)
+
 
 async def run_embedding_worker() -> None:
+    args = _parse_args()
     settings = load_settings()
 
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     logger.info("Starting embedding worker")
 
     db = Database(settings.db_url)
@@ -478,6 +679,8 @@ async def run_embedding_worker() -> None:
 
     visual_service = VisualEmbeddingService(settings)
 
+    processing_batch = args.batch_id if args.batch_id is not None else settings.processing_batch_id
+
     worker = EmbeddingWorker(
         db=db,
         qdrant=qdrant,
@@ -485,6 +688,7 @@ async def run_embedding_worker() -> None:
         settings=settings,
         batch_size=settings.embedding_batch_size,
         poll_interval=5,
+        processing_batch=processing_batch,
     )
     worker.priority_mode = getattr(settings, "embedding_priority_mode", False)
 
@@ -496,6 +700,29 @@ async def run_embedding_worker() -> None:
             signal.signal(sig, worker.handle_shutdown)
 
     try:
+        if args.dry_run:
+            await _dry_run_chunk(worker)
+            return
+
+        points_before = 0
+        if args.verify:
+            collection = await qdrant.client.get_collection(qdrant.collection_name)
+            points_before = collection.points_count or 0
+            logger.info("Collection points before run: %d", points_before)
+
+        if args.snapshot:
+            snapshot_paths = await _create_all_snapshots(qdrant)
+            for path in snapshot_paths:
+                logger.info("Pre-run snapshot ready at %s", path)
+
+        if args.once:
+            stats = await worker.run_until_empty()
+            if args.verify:
+                ok = await _verify_after_run(qdrant, list(stats["embedded_ids"]), points_before)
+                if not ok:
+                    raise RuntimeError("Post-run verification failed")
+            return
+
         await worker.run()
     finally:
         await qdrant.close()

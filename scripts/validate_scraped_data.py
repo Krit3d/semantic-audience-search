@@ -409,16 +409,25 @@ async def _fetch_content_stats(
 async def _apply_batch_decisions(
     session: AsyncSession,
     outcome: BatchOutcome,
+    processing_batch: int | None,
 ) -> None:
     now_utc = datetime.now(timezone.utc)
+
+    rejected_values: dict[str, Any] = {"status": STATUS_REJECTED, "updated_at": now_utc}
+    if processing_batch is not None:
+        rejected_values["processing_batch"] = processing_batch
 
     rejected_ids = [rejection.account_id for rejection in outcome.rejections]
     if rejected_ids:
         await session.execute(
             update(Account)
             .where(Account.id.in_(rejected_ids))
-            .values(status=STATUS_REJECTED, updated_at=now_utc)
+            .values(**rejected_values)
         )
+
+    verified_values: dict[str, Any] = {"status": STATUS_VERIFIED, "updated_at": now_utc}
+    if processing_batch is not None:
+        verified_values["processing_batch"] = processing_batch
 
     plain_verified_ids = [
         account_id
@@ -429,18 +438,21 @@ async def _apply_batch_decisions(
         await session.execute(
             update(Account)
             .where(Account.id.in_(plain_verified_ids))
-            .values(status=STATUS_VERIFIED, updated_at=now_utc)
+            .values(**verified_values)
         )
 
     for account_id, patched_metadata in outcome.metadata_patches.items():
+        patch_values: dict[str, Any] = {
+            "status": STATUS_VERIFIED,
+            "raw_metadata": patched_metadata,
+            "updated_at": now_utc,
+        }
+        if processing_batch is not None:
+            patch_values["processing_batch"] = processing_batch
         await session.execute(
             update(Account)
             .where(Account.id == account_id)
-            .values(
-                status=STATUS_VERIFIED,
-                raw_metadata=patched_metadata,
-                updated_at=now_utc,
-            )
+            .values(**patch_values)
         )
 
     await session.commit()
@@ -493,6 +505,7 @@ async def _process_batch(
     cursor: int,
     batch_size: int,
     dry_run: bool,
+    processing_batch: int | None,
 ) -> tuple[int, BatchOutcome]:
     rows = await _fetch_account_batch(session, cursor, batch_size, lock_rows=not dry_run)
     if not rows:
@@ -505,7 +518,7 @@ async def _process_batch(
     outcome = _evaluate_batch(rows, stats_map)
 
     if not dry_run:
-        await _apply_batch_decisions(session, outcome)
+        await _apply_batch_decisions(session, outcome, processing_batch)
 
     return new_cursor, outcome
 
@@ -603,6 +616,24 @@ def _save_invalid_report(report: dict[str, Any], report_path: str) -> None:
     logger.info("Invalid accounts report saved to %s", report_path)
 
 
+async def _resolve_processing_batch(session: AsyncSession, requested: int | None) -> int:
+    if requested is not None:
+        if requested <= 0:
+            raise ValueError("--batch-id must be a positive integer")
+        existing = await session.execute(
+            select(func.count(Account.id)).where(Account.processing_batch == requested)
+        )
+        if existing.scalar_one() > 0:
+            raise ValueError(
+                f"processing_batch {requested} is already used by existing accounts; choose another id"
+            )
+        return requested
+    result = await session.execute(
+        select(func.coalesce(func.max(Account.processing_batch), 0) + 1)
+    )
+    return int(result.scalar_one())
+
+
 async def run() -> None:
     setup_logging(os.getenv("LOG_LEVEL", "INFO"))
 
@@ -633,6 +664,12 @@ async def run() -> None:
         default=DEFAULT_REPORT_PATH,
         help=f"Where to write the invalid accounts report (default: {DEFAULT_REPORT_PATH}).",
     )
+    parser.add_argument(
+        "--batch-id",
+        type=int,
+        default=None,
+        help="Explicit processing_batch value to stamp on accounts promoted in this run. Default: COALESCE(MAX(processing_batch), 0) + 1.",
+    )
     args = parser.parse_args()
 
     if args.batch_size <= 0:
@@ -640,6 +677,9 @@ async def run() -> None:
         sys.exit(1)
     if args.max_accounts is not None and args.max_accounts <= 0:
         logger.critical("--max-accounts must be a positive integer.")
+        sys.exit(1)
+    if args.batch_id is not None and args.batch_id <= 0:
+        logger.critical("--batch-id must be a positive integer.")
         sys.exit(1)
 
     if args.dry_run:
@@ -657,6 +697,17 @@ async def run() -> None:
     )
 
     db = Database(db_url)
+
+    processing_batch: int | None = None
+    if not args.dry_run:
+        async with db.async_session() as session:
+            try:
+                processing_batch = await _resolve_processing_batch(session, args.batch_id)
+            except ValueError as e:
+                logger.critical("Invalid --batch-id: %s", e)
+                await db.close()
+                sys.exit(1)
+        logger.info("Stamping promoted accounts with processing_batch=%d", processing_batch)
 
     total_verified: int = 0
     total_invalid: int = 0
@@ -695,6 +746,7 @@ async def run() -> None:
                 cursor=cursor,
                 batch_size=batch_size,
                 dry_run=args.dry_run,
+                processing_batch=processing_batch,
             )
 
         batch_count = len(outcome.verified_ids) + len(outcome.rejections)

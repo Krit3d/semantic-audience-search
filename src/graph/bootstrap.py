@@ -134,16 +134,20 @@ async def ensure_iab_taxonomy(client: Neo4jClient, taxonomy_path: Path | str) ->
     return len(concepts)
 
 
-async def sync_verified_actors(db: Database, client: Neo4jClient, batch_size: int = 5000) -> int:
-    rows = await client.execute_read("MATCH (a:Actor) RETURN count(a) AS cnt LIMIT 1")
-    if rows and rows[0]["cnt"] > 0:
-        return 0
+async def sync_verified_actors(db: Database, client: Neo4jClient, batch_size: int = 5000, processing_batch: int | None = None) -> int:
+    if processing_batch is None:
+        rows = await client.execute_read("MATCH (a:Actor) RETURN count(a) AS cnt LIMIT 1")
+        if rows and rows[0]["cnt"] > 0:
+            return 0
 
     total_synced = 0
     last_id = 0
 
     while True:
         async with db.async_session() as session:
+            conditions = [Account.status == "verified", Account.id > last_id]
+            if processing_batch is not None:
+                conditions.append(Account.processing_batch == processing_batch)
             stmt = (
                 select(
                     Account.id,
@@ -153,7 +157,7 @@ async def sync_verified_actors(db: Database, client: Neo4jClient, batch_size: in
                     Account.title,
                     Account.raw_metadata,
                 )
-                .where(Account.status == "verified", Account.id > last_id)
+                .where(*conditions)
                 .order_by(Account.id.asc())
                 .limit(batch_size)
             )
@@ -227,9 +231,15 @@ async def bootstrap_graph(settings: Settings, db: Database, client: Neo4jClient)
                 logger.info("IAB taxonomy loaded %d concepts in %.2f s", iab_count, iab_elapsed)
 
                 t2 = time.monotonic()
-                actor_count = await sync_verified_actors(db, client)
+                actor_count = await sync_verified_actors(
+                    db, client, processing_batch=settings.processing_batch_id
+                )
                 actor_elapsed = time.monotonic() - t2
-                logger.info("Synced %d verified actors in %.2f s", actor_count, actor_elapsed)
+                logger.info(
+                    "Synced %d verified actors in %.2f s (processing_batch=%s)",
+                    actor_count, actor_elapsed,
+                    settings.processing_batch_id if settings.processing_batch_id is not None else "ALL(legacy)",
+                )
 
                 total_elapsed = time.monotonic() - start
                 logger.info(

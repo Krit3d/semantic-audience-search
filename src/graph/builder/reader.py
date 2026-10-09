@@ -47,18 +47,22 @@ class Reader:
         worker_id: int = 0,
         total_workers: int = 1,
         priority_mode: bool = True,
+        processing_batch: int | None = None,
     ) -> list[PostBatchContext]:
         t0 = time.perf_counter()
         now = datetime.now(timezone.utc)
         async with self._db.async_session() as session:
             async with session.begin():
+                candidate_conditions = [
+                    Content.graph_status == 0,
+                    Account.status == "verified",
+                ]
+                if processing_batch is not None:
+                    candidate_conditions.append(Account.processing_batch == processing_batch)
                 candidate_authors_stmt = (
                     select(Content.account_id)
                     .join(Content.account)
-                    .where(
-                        Content.graph_status == 0,
-                        Account.status == "verified",
-                    )
+                    .where(*candidate_conditions)
                 )
                 if total_workers > 1:
                     candidate_authors_stmt = candidate_authors_stmt.where(

@@ -308,6 +308,10 @@ class Settings(BaseSettings):
     )
     enable_visual_embeddings: bool = Field(default=False, description="Enable or disable visual video embeddings extraction")
     visual_embedding_dim: int = Field(default=512, description="Dimension of visual video embeddings")
+    processing_batch_id: int | None = Field(
+        default=None,
+        description="If set, workers process only verified accounts stamped with this processing_batch. If None, legacy behavior: all verified accounts regardless of processing_batch",
+    )
     graph_name: str = Field(
         default="social_graph",
         description="The Apache AGE graph name",

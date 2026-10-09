@@ -222,11 +222,11 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, baseUrl: string = API_BASE): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(init.headers as Record<string, string> | undefined) };
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  const response = await fetch(`${baseUrl}${path}`, { ...init, headers });
   if (response.status === 401) {
     api.logout();
     window.dispatchEvent(new CustomEvent('creatorflow:auth_expired'));
@@ -243,6 +243,31 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(detail, response.status);
   }
   return (await response.json()) as T;
+}
+
+export interface SupportTicketItem {
+  id: number;
+  ticket_number: string;
+  user_id: number | null;
+  email: string;
+  category: string;
+  subject: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportTicketDetail extends SupportTicketItem {
+  description: string;
+  page_url: string | null;
+  user_agent: string | null;
+}
+
+export interface SupportTicketListResponse {
+  items: SupportTicketItem[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 function getStoredUser(): Record<string, unknown> | null {
@@ -433,6 +458,56 @@ export const api = {
 
   getToken(): string {
     return localStorage.getItem(TOKEN_KEY) ?? '';
+  },
+
+  async getTickets(params: { status?: string; category?: string; page?: number; pageSize?: number } = {}): Promise<SupportTicketListResponse> {
+    const query = new URLSearchParams();
+    if (params.status) query.set('status', params.status);
+    if (params.category) query.set('category', params.category);
+    query.set('page', String(params.page ?? 1));
+    query.set('page_size', String(params.pageSize ?? 20));
+    return request<SupportTicketListResponse>(`/support/tickets?${query.toString()}`, {}, ROOT_API_URL);
+  },
+
+  async getTicket(ticketId: number): Promise<SupportTicketDetail> {
+    return request<SupportTicketDetail>(`/support/tickets/${ticketId}`, {}, ROOT_API_URL);
+  },
+
+  async updateTicketStatus(ticketId: number, status: string): Promise<SupportTicketItem> {
+    return request<SupportTicketItem>(`/support/tickets/${ticketId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }, ROOT_API_URL);
+  },
+
+  async bulkTickets(ticketIds: number[], action: 'delete' | 'set_status', status?: string): Promise<number> {
+    const data = await request<{ affected: number }>('/support/tickets/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ ticket_ids: ticketIds, action, status }),
+    }, ROOT_API_URL);
+    return data.affected;
+  },
+
+  async deleteTicket(ticketId: number): Promise<void> {
+    const headers: Record<string, string> = {};
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const response = await fetch(`${ROOT_API_URL}/support/tickets/${ticketId}`, { method: 'DELETE', headers });
+    if (response.status === 401) {
+      api.logout();
+      window.dispatchEvent(new CustomEvent('creatorflow:auth_expired'));
+      throw new ApiError('Сессия истекла. Пожалуйста, войдите снова.', 401);
+    }
+    if (!response.ok) {
+      let detail = `Ошибка запроса (${response.status})`;
+      try {
+        const body = (await response.json()) as { detail?: unknown };
+        if (typeof body.detail === 'string') detail = body.detail;
+      } catch {
+        /* ignore parse failures */
+      }
+      throw new ApiError(detail, response.status);
+    }
   },
 };
 

@@ -33,6 +33,14 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      window.__SUPPORT_API_URL__ = "%VITE_API_URL%";
+      if (!window.__SUPPORT_API_URL__ || window.__SUPPORT_API_URL__.charAt(0) === "%") {
+        window.__SUPPORT_API_URL__ = "https://api.collabrama.ru/api/v1";
+      }
+      window.__SUPPORT_WIDGET_DOCK__ = "sidebar";
+    </script>
+    <script defer src="/support-widget.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

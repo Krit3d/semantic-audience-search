@@ -65,19 +65,16 @@ def get_crm_client(request: Request) -> TwentyCrmClient:
     )
 
 
-async def get_current_user(
-    request: Request,
-    db: Database = Depends(get_db),
-) -> User:
+async def _resolve_user(request: Request, db: Database) -> User | None:
     auth_header = request.headers.get("Authorization")
     token = None
     if isinstance(auth_header, str) and auth_header.startswith("Bearer "):
         token = auth_header[len("Bearer "):]
     if not token:
-        raise HTTPException(status_code=401, detail="Недействительный токен авторизации")
+        return None
     payload = decode_access_token(token, request.app.state.settings.secret_key)
     if payload is None:
-        raise HTTPException(status_code=401, detail="Недействительный токен авторизации")
+        return None
     user_id = payload.get("user_id")
     email = payload.get("sub") or payload.get("email")
     async with db.async_session() as session:
@@ -85,12 +82,40 @@ async def get_current_user(
             stmt = select(User).where(User.id == user_id)
         else:
             stmt = select(User).where(func.lower(User.email) == str(email).lower())
-        user = (await session.execute(stmt)).scalar_one_or_none()
+        return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def get_current_user(
+    request: Request,
+    db: Database = Depends(get_db),
+) -> User:
+    user = await _resolve_user(request, db)
     if user is None:
-        raise HTTPException(status_code=401, detail="Пользователь не найден")
+        raise HTTPException(status_code=401, detail="Недействительный токен авторизации")
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Учетная запись деактивирована",
         )
     return user
+
+
+async def get_optional_user(
+    request: Request,
+    db: Database = Depends(get_db),
+) -> User | None:
+    user = await _resolve_user(request, db)
+    if user is None or not user.is_active:
+        return None
+    return user
+
+
+async def require_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Доступ разрешён только администраторам",
+        )
+    return current_user

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { KanbanSquare, Briefcase, Users, MessageCircle, Tag, BookOpen, BarChart3, Bell, Plus, Search, Zap, X, Clapperboard, BellRing, ShieldAlert, PenTool, LogOut } from 'lucide-react';
+import { KanbanSquare, Briefcase, Users, MessageCircle, Tag, BookOpen, BarChart3, Bell, Plus, Search, Zap, X, Clapperboard, BellRing, ShieldAlert, PenTool, LogOut, LifeBuoy } from 'lucide-react';
 import { BRANDS, AUTHORS, STAGES, authorById, brandById, fmtMoney, type Deal } from './data';
 import { ToastProvider, useToast, Badge, Avatar, Btn, Modal, Field, inputCls } from './components/ui';
 import LoginModal from './components/LoginModal';
@@ -13,11 +13,12 @@ import ContractWizard from './screens/ContractWizard';
 import Erid from './screens/Erid';
 import Analytics from './screens/Analytics';
 import Publications from './screens/Publications';
+import Tickets from './screens/Tickets';
 import { DealsList, CommsList } from './screens/Lists';
 
-type Screen = 'kanban' | 'deals' | 'authors' | 'author' | 'comms' | 'erid' | 'kb' | 'analytics' | 'pubs';
+type Screen = 'kanban' | 'deals' | 'authors' | 'author' | 'comms' | 'erid' | 'kb' | 'analytics' | 'pubs' | 'tickets';
 
-const SCREENS: Screen[] = ['kanban', 'deals', 'authors', 'author', 'comms', 'erid', 'kb', 'pubs', 'analytics'];
+const SCREENS: Screen[] = ['kanban', 'deals', 'authors', 'author', 'comms', 'erid', 'kb', 'pubs', 'analytics', 'tickets'];
 
 const screenFromHash = (): Screen => {
   let seg = window.location.hash;
@@ -59,7 +60,7 @@ const dealIdFromHash = (): string | null => {
   return new URLSearchParams(window.location.search).get('dealId');
 };
 
-const MENU: { id: Screen; label: string; icon: React.ReactNode }[] = [
+const MENU: { id: Screen; label: string; icon: React.ReactNode; adminOnly?: boolean }[] = [
   { id: 'kanban', label: 'Воронка сделок', icon: <KanbanSquare size={16} /> },
   { id: 'deals', label: 'Сделки', icon: <Briefcase size={16} /> },
   { id: 'authors', label: 'Авторы', icon: <Users size={16} /> },
@@ -68,6 +69,7 @@ const MENU: { id: Screen; label: string; icon: React.ReactNode }[] = [
   { id: 'kb', label: 'База знаний бренда', icon: <BookOpen size={16} /> },
   { id: 'pubs', label: 'Публикации', icon: <Clapperboard size={16} /> },
   { id: 'analytics', label: 'Аналитика', icon: <BarChart3 size={16} /> },
+  { id: 'tickets', label: 'Тикеты', icon: <LifeBuoy size={16} />, adminOnly: true },
 ];
 
 const NOTIFS = [
@@ -78,6 +80,8 @@ const NOTIFS = [
 
 function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLogout: () => void }) {
   const toast = useToast();
+  const isAdmin = user?.is_admin === true;
+  const visibleMenu = MENU.filter(m => !m.adminOnly || isAdmin);
   const [screen, setScreen] = useState<Screen>(screenFromHash);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [dealId, setDealId] = useState<string | null>(null);
@@ -149,7 +153,7 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
           </div>
         </div>
         <nav className="flex-1 min-h-0 overflow-y-auto scroll-thin px-3 flex flex-col gap-0.5">
-          {MENU.map(m => (
+          {visibleMenu.map(m => (
             <button key={m.id} onClick={() => { window.location.hash = '#/' + m.id; setScreen(m.id); if (m.id !== 'kb') setKbBrand(undefined); if (m.id !== 'author') setProfileId(p => p); }}
               className={`flex items-center gap-2.5 px-3 h-9.5 rounded-lg text-[13px] font-semibold transition-all ${
                 screen === m.id ? 'bg-indigo-50 text-indigo-700 shadow-sm shadow-indigo-100' : 'text-gray-500 hover:bg-slate-50 hover:text-gray-800'}`}>
@@ -158,6 +162,12 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
             </button>
           ))}
         </nav>
+        <div className="px-3 pb-1">
+          <button onClick={() => (window as unknown as { cfSupportOpen?: () => void }).cfSupportOpen?.()}
+            className="w-full flex items-center gap-2.5 px-3 h-9.5 rounded-lg text-[13px] font-semibold text-gray-500 hover:bg-slate-50 hover:text-gray-800 transition-all">
+            <span className="text-gray-400"><LifeBuoy size={16} /></span>Поддержка
+          </button>
+        </div>
         <div className="p-3 border-t border-gray-100">
           <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl">
             <Avatar nick={userHandle(user)} hue={255} size={34} />
@@ -223,6 +233,14 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
           {screen === 'kb' && <KnowledgeBase initialBrandId={kbBrand} key={kbBrand ?? 'kb'} />}
           {screen === 'pubs' && <Publications onOpenDeal={openDeal} />}
           {screen === 'analytics' && <Analytics deals={deals} />}
+          {screen === 'tickets' && (isAdmin ? <Tickets /> : (
+            <div className="h-full flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-[40px] font-extrabold font-display text-gray-200">403</div>
+                <div className="text-[13px] font-semibold text-gray-400 mt-1">Доступ разрешён только администраторам</div>
+              </div>
+            </div>
+          ))}
         </main>
       </div>
 
@@ -494,6 +512,10 @@ function Row({ left, main, sub, onClick }: { left: React.ReactNode; main: string
 export default function App() {
   const [user, setUser] = useState<Record<string, unknown> | null>(() => api.getCurrentUser());
   const [authed, setAuthed] = useState<boolean>(() => api.isAuthenticated());
+
+  useEffect(() => {
+    (window as unknown as { cfSupportFloating?: (show: boolean) => void }).cfSupportFloating?.(!authed);
+  }, [authed]);
 
   useEffect(() => {
     const onAuthExpired = () => {

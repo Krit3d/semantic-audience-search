@@ -46,17 +46,23 @@ class InMemoryRateLimiter:
 _limiter = InMemoryRateLimiter()
 
 
+async def check_rate_limit(request: Request, max_requests: int, window_seconds: int, key_extra: str | None = None) -> None:
+    client_ip = _limiter.get_client_ip(request)
+    normalized_path = request.url.path.rstrip("/") or "/"
+    key = f"{client_ip}:{normalized_path}"
+    if key_extra is not None:
+        key = f"{key}:{key_extra}"
+    limited = await _limiter.is_rate_limited(key, max_requests, window_seconds)
+    if limited:
+        raise HTTPException(
+            status_code=429,
+            detail="Слишком много запросов. Попробуйте позже.",
+            headers={"Retry-After": str(window_seconds)},
+        )
+
+
 def rate_limit(max_requests: int, window_seconds: int):
     async def dependency(request: Request) -> None:
-        client_ip = _limiter.get_client_ip(request)
-        normalized_path = request.url.path.rstrip("/") or "/"
-        key = f"{client_ip}:{normalized_path}"
-        limited = await _limiter.is_rate_limited(key, max_requests, window_seconds)
-        if limited:
-            raise HTTPException(
-                status_code=429,
-                detail="Слишком много запросов. Попробуйте позже.",
-                headers={"Retry-After": str(window_seconds)},
-            )
+        await check_rate_limit(request, max_requests, window_seconds)
 
     return dependency

@@ -41,7 +41,7 @@ async def crm_login(
         )
         return CrmLoginResponse(
             token=access_token,
-            user={"id": user.id, "email": user.email, "name": user.name or user.email.split("@")[0]},
+            user={"id": user.id, "email": user.email, "name": user.name or user.email.split("@")[0], "is_admin": user.is_admin},
         )
 
     try:
@@ -77,13 +77,14 @@ async def crm_login(
         user_id = user.id
         user_email = user.email
         user_name = user.name or user_email.split("@")[0]
+        user_is_admin = user.is_admin
     access_token = create_access_token(
         {"sub": user_email, "user_id": user_id},
         request.app.state.settings.secret_key,
     )
     return CrmLoginResponse(
         token=access_token,
-        user={"id": user_id, "email": user_email, "name": user_name},
+        user={"id": user_id, "email": user_email, "name": user_name, "is_admin": user_is_admin},
     )
 
 
@@ -112,6 +113,7 @@ async def crm_register(
         user_id = user.id
         user_email = user.email
         user_name = user.name or user_email.split("@")[0]
+        user_is_admin = user.is_admin
 
     access_token = create_access_token(
         {"sub": user_email, "user_id": user_id},
@@ -119,5 +121,5 @@ async def crm_register(
     )
     return CrmLoginResponse(
         token=access_token,
-        user={"id": user_id, "email": user_email, "name": user_name},
+        user={"id": user_id, "email": user_email, "name": user_name, "is_admin": user_is_admin},
     )

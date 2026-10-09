@@ -7,6 +7,10 @@
 }
 
 html, body, #root { height: 100%; }
+body { overflow: hidden; }
+#root { zoom: 1.08; width: calc(100vw / 1.08); height: calc(100vh / 1.08); }
+#root .h-screen { height: calc(100vh / 1.08); }
+#root .min-h-screen { min-height: calc(100vh / 1.08); }
 body {
   font-family: var(--font-sans);
   background: #f8fafc;

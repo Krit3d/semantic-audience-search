@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Float,
     ForeignKey,
     Index,
@@ -60,6 +61,12 @@ class Account(Base):
             func.lower(text("platform_id")),
             unique=True,
             postgresql_where=text("platform_id IS NOT NULL AND platform_id != ''"),
+        ),
+        Index(
+            "idx_accounts_processing_batch",
+            "status",
+            "processing_batch",
+            postgresql_where=text("processing_batch IS NOT NULL"),
         ),
     )
 
@@ -115,6 +122,11 @@ class Account(Base):
         Boolean,
         nullable=True,
         comment="True if account has video notes or author keywords",
+    )
+    processing_batch: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Chunk identifier assigned when account is promoted to 'verified'. NULL for legacy batches processed before batching was introduced",
     )
 
     raw_metadata: Mapped[dict[str, Any] | None] = mapped_column(
@@ -426,6 +438,12 @@ class User(Base):
         server_default="true",
         nullable=False,
     )
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -437,6 +455,9 @@ class User(Base):
     )
     shortlists: Mapped[list["UserShortlist"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+    tickets: Mapped[list["Ticket"]] = relationship(
+        back_populates="user"
     )
 
     def __repr__(self) -> str:
@@ -626,3 +647,59 @@ class UserShortlist(Base):
 
     user: Mapped["User"] = relationship(back_populates="shortlists")
     account: Mapped["Account"] = relationship(lazy="joined")
+
+
+class Ticket(Base):
+    __tablename__ = "tickets"
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('bug', 'question', 'suggestion', 'other')",
+            name="ck_tickets_category",
+        ),
+        CheckConstraint(
+            "status IN ('new', 'in_progress', 'resolved', 'closed')",
+            name="ck_tickets_status",
+        ),
+        Index("ix_tickets_status_created", "status", "created_at"),
+        Index("ix_tickets_category_created", "category", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_number: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    email: Mapped[str] = mapped_column(String(254), nullable=False)
+    category: Mapped[str] = mapped_column(String(20), nullable=False)
+    subject: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    page_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="new",
+        server_default="new",
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    user: Mapped["User | None"] = relationship(back_populates="tickets")
+
+    def __repr__(self) -> str:
+        return f"<Ticket(id={self.id}, ticket_number={self.ticket_number}, status={self.status})>"

@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -668,3 +669,151 @@ class CreatorProfileDetail(BaseModel):
     avg_reach: int = 0
     deals_count: int = 0
     posts: list[CreatorPostItem] = Field(default_factory=list)
+
+
+SUPPORT_TICKET_CATEGORIES = ("bug", "question", "suggestion", "other")
+SUPPORT_TICKET_STATUSES = ("new", "in_progress", "resolved", "closed")
+
+_EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+_MEANINGFUL_PATTERN = re.compile(r"[A-Za-zА-Яа-яЁё0-9]")
+
+
+def count_meaningful_chars(value: str) -> int:
+    return len(_MEANINGFUL_PATTERN.findall(value))
+
+
+def validate_support_email(value: str) -> str:
+    normalized = value.strip()
+    if not normalized or len(normalized) > 254 or not _EMAIL_PATTERN.match(normalized):
+        raise ValueError("Некорректный адрес электронной почты")
+    return normalized
+
+
+class SupportTicketCreateRequest(BaseModel):
+    category: str = Field(description="Ticket category: bug, question, suggestion, other")
+    subject: str = Field(min_length=1, max_length=120, description="Short ticket subject")
+    description: str = Field(min_length=1, max_length=2000, description="Detailed ticket description")
+    email: str | None = Field(default=None, max_length=254, description="Contact email, required for anonymous requests")
+    page_url: str | None = Field(default=None, max_length=2048, description="Page URL where the issue occurred")
+    user_agent: str | None = Field(default=None, max_length=512, description="Client user agent string")
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in SUPPORT_TICKET_CATEGORIES:
+            raise ValueError("Недопустимая категория обращения")
+        return normalized
+
+    @field_validator("subject", "description")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Поле не может быть пустым")
+        return stripped
+
+    @field_validator("subject")
+    @classmethod
+    def check_subject_meaningful(cls, value: str) -> str:
+        if count_meaningful_chars(value) < 3:
+            raise ValueError("Тема должна содержать хотя бы 3 буквы или цифры")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def check_description_meaningful(cls, value: str) -> str:
+        if count_meaningful_chars(value) < 10:
+            raise ValueError("Описание слишком короткое — опишите проблему подробнее")
+        return value
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped if stripped else None
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_support_email(value)
+
+    @field_validator("page_url", "user_agent", mode="before")
+    @classmethod
+    def strip_optional(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped if stripped else None
+        return value
+
+
+class SupportTicketStatusUpdateRequest(BaseModel):
+    status: str = Field(description="New ticket status")
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in SUPPORT_TICKET_STATUSES:
+            raise ValueError("Недопустимый статус тикета")
+        return normalized
+
+
+class SupportTicketItem(BaseModel):
+    id: int
+    ticket_number: str
+    user_id: int | None = None
+    email: str
+    category: str
+    subject: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class SupportTicketDetail(SupportTicketItem):
+    description: str
+    page_url: str | None = None
+    user_agent: str | None = None
+
+
+class SupportTicketListResponse(BaseModel):
+    items: list[SupportTicketItem] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+
+
+class SupportTicketBulkRequest(BaseModel):
+    ticket_ids: list[int] = Field(min_length=1, max_length=500, description="Ticket identifiers to process")
+    action: str = Field(description="Bulk action: delete or set_status")
+    status: str | None = Field(default=None, description="Target status, required for set_status")
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in ("delete", "set_status"):
+            raise ValueError("Недопустимое массовое действие")
+        return normalized
+
+    @model_validator(mode="after")
+    def check_status(self) -> "SupportTicketBulkRequest":
+        if self.action == "set_status":
+            if self.status is None:
+                raise ValueError("Укажите статус для смены")
+            normalized = self.status.strip().lower()
+            if normalized not in SUPPORT_TICKET_STATUSES:
+                raise ValueError("Недопустимый статус тикета")
+            self.status = normalized
+        return self
+
+
+class SupportTicketBulkResponse(BaseModel):
+    affected: int = Field(description="Number of tickets processed")

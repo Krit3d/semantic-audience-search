@@ -17,7 +17,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
 from starlette.responses import Response
 
-from src.api.routers import search, health, crm
+from src.api.routers import search, health, crm, support
 from src.api.services.crm_client import TwentyCrmClient
 from src.config.config import MEDIA_DIR, load_settings
 from src.db.database import Database
@@ -204,6 +204,7 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api/v1/health")
 app.include_router(search.router, prefix="/api/v1/search")
 app.include_router(crm.router, prefix="/api/v1")
+app.include_router(support.router, prefix="/api/v1")
 
 
 @app.get("/", response_class=HTMLResponse)

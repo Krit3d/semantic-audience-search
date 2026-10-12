@@ -65,11 +65,14 @@ cleanup() {
 
     log_info "Starting cleanup process..."
 
-    # Stop and remove the temporary container if it exists
+    # Stop and remove the temporary container if it exists.
+    # -v is REQUIRED: the postgres image declares an anonymous volume for
+    # /var/lib/postgresql/data; without -v the volume leaks on every run
+    # (this already cost us 16 GB once).
     if docker ps -a --format '{{.Names}}' | grep -q "^${TEMP_CONTAINER_NAME}$"; then
-        log_info "Stopping and removing temporary container: ${TEMP_CONTAINER_NAME}"
+        log_info "Stopping and removing temporary container (with volumes): ${TEMP_CONTAINER_NAME}"
         docker stop "${TEMP_CONTAINER_NAME}" >/dev/null 2>&1 || true
-        docker rm -f "${TEMP_CONTAINER_NAME}" >/dev/null 2>&1 || true
+        docker rm -fv "${TEMP_CONTAINER_NAME}" >/dev/null 2>&1 || true
     fi
 
     # Remove the temporary stderr capture file if it exists
@@ -471,6 +474,19 @@ main() {
     fi
 
     log_success "File integrity checks passed"
+
+    # =========================================================================
+    # Disk space guard: a full disk during restore once left an orphaned
+    # container + 16 GB anonymous volume and broke the whole pipeline.
+    # =========================================================================
+    local required_free_mb="${VERIFY_REQUIRED_FREE_MB:-20480}"
+    local avail_mb
+    avail_mb=$(df -Pm /var/lib/docker | awk 'NR==2 {print $4}')
+    if [ "${avail_mb:-0}" -lt "$required_free_mb" ]; then
+        log_error "Not enough free disk space for verification: ${avail_mb} MB available, ${required_free_mb} MB required. Free up space first."
+        exit 1
+    fi
+    log_info "Disk space check passed: ${avail_mb} MB available (required: ${required_free_mb} MB)"
 
     # =========================================================================
     # Step 2: Start Temporary Docker Environment

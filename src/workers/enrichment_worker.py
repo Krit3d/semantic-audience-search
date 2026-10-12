@@ -47,7 +47,8 @@ class EnrichmentLLMResult(BaseModel):
             raise ValueError("Country must be a string or null")
         canonical = canonicalize_country(val)
         if canonical is None:
-            raise ValueError(f"Invalid country '{val}'. Must be a valid ISO country or null")
+            logger.warning("Unknown country code '%s', storing NULL", val)
+            return None
         return canonical
 
     @field_validator("city", mode="before")
@@ -96,6 +97,7 @@ class EnrichmentWorker:
             self._llm_model = ""
 
         self._processing_ids: set[int] = set()
+        self._failed_ids: set[int] = set()
         self._acquire_lock = asyncio.Lock()
         self._concurrency = getattr(settings, 'enrichment_concurrency', 15)
 
@@ -472,7 +474,9 @@ class EnrichmentWorker:
                     )
                 if self._processing_ids:
                     stmt = stmt.where(Account.id.notin_(self._processing_ids))
-                stmt = stmt.limit(1)
+                if self._failed_ids:
+                    stmt = stmt.where(Account.id.notin_(self._failed_ids))
+                stmt = stmt.order_by(Account.id.asc()).limit(1)
                 result = await session.execute(stmt)
                 account = result.one_or_none()
 
@@ -573,11 +577,13 @@ class EnrichmentWorker:
             if "enrichment" in tasks and llm_result is None:
                 logger.error("Skipping save for account %d due to failed LLM generation. Will retry later.", account_id)
                 self._processing_ids.discard(account_id)
+                self._failed_ids.add(account_id)
                 return True
 
             if "category" in tasks and category_id is None:
                 logger.error("Skipping enrichment save for account %d because category identification failed.", account_id)
                 self._processing_ids.discard(account_id)
+                self._failed_ids.add(account_id)
                 return True
 
             if self.settings.enrichment_enable_er:
@@ -585,6 +591,7 @@ class EnrichmentWorker:
         except Exception:
             logger.exception("LLM processing failed for account %d", account_id)
             self._processing_ids.discard(account_id)
+            self._failed_ids.add(account_id)
             return True
 
         now = datetime.now(timezone.utc)
@@ -667,6 +674,18 @@ class EnrichmentWorker:
         logger.info("Shutdown signal received, stopping enrichment worker...")
         self._shutdown_event.set()
 
+    async def _heartbeat_loop(self) -> None:
+        while not self._shutdown_event.is_set():
+            logger.info(
+                "Heartbeat: in_flight=%d failed_this_run=%d",
+                len(self._processing_ids),
+                len(self._failed_ids),
+            )
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=300.0)
+            except asyncio.TimeoutError:
+                pass
+
     async def start(self) -> None:
         logger.info(
             "Enrichment worker starting with concurrency=%d poll_interval=%ds",
@@ -676,6 +695,7 @@ class EnrichmentWorker:
         await self._db.init_db()
 
         tasks = [asyncio.create_task(self._worker_loop()) for _ in range(self._concurrency)]
+        tasks.append(asyncio.create_task(self._heartbeat_loop()))
 
         try:
             await asyncio.gather(*tasks)

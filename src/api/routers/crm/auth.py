@@ -3,8 +3,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 
-from src.api.dependencies import get_crm_client, get_db
-from src.api.schemas import CrmLoginRequest, CrmLoginResponse, CrmRegisterRequest
+from src.api.dependencies import get_current_user, get_crm_client, get_db
+from src.api.schemas import CrmLoginRequest, CrmLoginResponse, CrmRegisterRequest, CrmUserResponse
 from src.api.services.crm_client import TwentyCrmClient
 from src.db.database import Database
 from src.db.models import User
@@ -122,4 +122,13 @@ async def crm_register(
     return CrmLoginResponse(
         token=access_token,
         user={"id": user_id, "email": user_email, "name": user_name, "is_admin": user_is_admin},
+    )
+
+@router.get("/me", response_model=CrmUserResponse)
+async def crm_me(current_user: User = Depends(get_current_user)) -> CrmUserResponse:
+    return CrmUserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        name=current_user.name or current_user.email.split("@")[0],
+        is_admin=current_user.is_admin,
     )

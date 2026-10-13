@@ -239,8 +239,12 @@ class SearchService:
                     affinity_reason=scored.affinity_reason,
                     primary_tone=coerce_tone(evidence.primary_tone) if evidence else None,
                     primary_hormone=coerce_hormone(evidence.primary_hormone) if evidence else None,
+                    is_business=not hydrated.is_author_blog,
                 )
             )
+
+        if request.min_err is not None:
+            items = [item for item in items if (item.static_avg_er or 0.0) >= request.min_err]
 
         total_ms = (time.perf_counter() - start_time) * 1000.0
 

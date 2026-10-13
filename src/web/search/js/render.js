@@ -26,7 +26,6 @@ const CLAMP_CLASS = "explanation-clamped";
 const TONE_LABELS = { expert: "Экспертный", educational: "Обучающий", entertainment: "Развлекательный", provocative: "Провокационный", casual: "Повседневный", analytical: "Аналитический" };
 const HORMONE_LABELS = { dopamine: "Дофамин", serotonin: "Серотонин", oxytocin: "Окситоцин", adrenaline: "Адреналин", cortisol: "Кортизол", endorphin: "Эндорфин" };
 const GENDER_LABELS = { male: "Мужской", female: "Женский", duo: "Дуэт"};
-const HORMONE_HINTS = { dopamine: "Драйв и тренды", serotonin: "Статус и порядок", oxytocin: "Семья и забота", adrenaline: "Экстрим и риск", cortisol: "Боли и проблемы", endorphin: "Юмор и позитив" };
 const TONE_DESCRIPTIONS = {
   expert: "Экспертный: глубокий профессиональный анализ и авторитет",
   educational: "Обучающий: пошаговые инструкции, лайфхаки и советы",
@@ -85,12 +84,6 @@ function formatCount(value) {
   return String(num);
 }
 
-function formatTime(ts) {
-  if (!ts) return "";
-  const date = new Date(ts);
-  return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-}
-
 export function renderSearchProgress(stepIndex, container) {
   if (!container) return;
   const rows = STAGES.map((label, i) => {
@@ -116,33 +109,6 @@ export function renderSearchProgress(stepIndex, container) {
   container.innerHTML = `<div class="stages">${rows}</div>`;
 }
 
-export function renderAudienceValidationCard(store) {
-  if (!store || store.currentStep < 2 || !store.targetAudienceDescription) {
-    return "";
-  }
-  return `<div class="audience-validation-card">
-    <div class="audience-validation-head">
-      <div class="audience-validation-title-group">
-        <span class="audience-validation-title">Корректно ли определена ваша целевая аудитория?</span>
-        <span class="audience-validation-badge">🎯 ЦА</span>
-      </div>
-      <button class="btn-banner-reset" data-action="reset-audience">↺ Сбросить к бренду</button>
-    </div>
-    <textarea class="audience-editable-textarea" data-audience-input rows="3">${escapeHtml(store.targetAudienceDescription)}</textarea>
-  </div>`;
-}
-
-export function renderHormoneChips(selectedHormones = []) {
-  const selected = Array.isArray(selectedHormones) ? selectedHormones : [];
-  const chips = Object.entries(HORMONE_LABELS).map(([key, label]) => {
-    const on = selected.includes(key) ? " on" : "";
-    const desc = HORMONE_DESCRIPTIONS[key] || "";
-    const hint = HORMONE_HINTS[key] || "";
-    return `<button class="hormone-chip${on}" data-action="toggle-hormone" data-hormone="${key}" title="${escapeHtml(desc)}"><span class="hormone-label">${escapeHtml(label)}</span><span class="hormone-hint">· ${escapeHtml(hint)}</span></button>`;
-  }).join("");
-  return `<div class="hormone-chips">${chips}</div>`;
-}
-
 export function renderAuthorCards(authors, container, store) {
   if (!container) return;
   if (!authors || authors.length === 0) {
@@ -152,6 +118,9 @@ export function renderAuthorCards(authors, container, store) {
     </div>`;
     return;
   }
+
+  const isSimilarMode = store && store.searchMode === "similar";
+  const relCaption = isSimilarMode ? "сходство" : "релевантность";
 
   const cards = authors.map((item) => {
     const id = item.account_id ?? item.id ?? item.author_id ?? item.username;
@@ -170,11 +139,20 @@ export function renderAuthorCards(authors, container, store) {
     const shortLabel = inShort ? "В шортлисте" : "В шортлист";
     const color = colorFor(name);
     const explanation = item.explanation || "";
-    const matchBadge = item.match_type === "affinity"
-      ? `<span class="badge-affinity"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="12" r="5"></circle><circle cx="15" cy="12" r="5"></circle></svg><span>${item.affinity_reason ? `Смежная ЦА · ${escapeHtml(item.affinity_reason)}` : "Смежная ЦА"}</span></span>`
-      : item.match_type === "direct"
-        ? `<span class="badge-direct"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"></circle><path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M2 12h3"></path><path d="M19 12h3"></path></svg><span>Прямой поиск</span></span>`
-        : "";
+    let matchBadge = "";
+    if (isSimilarMode) {
+      const reason = item.affinity_reason && String(item.affinity_reason).startsWith("похож")
+        ? escapeHtml(item.affinity_reason)
+        : "Похожие";
+      matchBadge = `<span class="badge-affinity"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg><span>${reason}</span></span>`;
+    } else if (item.match_type === "affinity") {
+      matchBadge = `<span class="badge-affinity"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="12" r="5"></circle><circle cx="15" cy="12" r="5"></circle></svg><span>${item.affinity_reason ? `Смежная ЦА · ${escapeHtml(item.affinity_reason)}` : "Смежная ЦА"}</span></span>`;
+    } else if (item.match_type === "direct") {
+      matchBadge = `<span class="badge-direct"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"></circle><path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M2 12h3"></path><path d="M19 12h3"></path></svg><span>Прямой поиск</span></span>`;
+    }
+    const bizBadge = item.is_business
+      ? `<span class="badge-biz" title="Аккаунт компании"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"></rect><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"></path></svg><span>Бизнес</span></span>`
+      : "";
     const psychoBadges = [];
     if (item.primary_tone) {
       const toneDesc = TONE_DESCRIPTIONS[item.primary_tone] || "";
@@ -191,7 +169,7 @@ export function renderAuthorCards(authors, container, store) {
       ? `<span class="badge-gender ${item.gender}" title="Пол автора: ${GENDER_LABELS[item.gender]}">${GENDER_LABELS[item.gender]}</span>`
       : "";
     const psychoRow = psychoBadges.length > 0 ? `<div class="badges-psycho">${psychoBadges.join("")}</div>` : "";
-    const badgesRow = (matchBadge || langBadge || genderBadge || psychoRow) ? `<div class="author-badges">${matchBadge}${langBadge}${genderBadge}${psychoRow}</div>` : "";
+    const badgesRow = (matchBadge || langBadge || genderBadge || bizBadge || psychoRow) ? `<div class="author-badges">${matchBadge}${langBadge}${genderBadge}${bizBadge}${psychoRow}</div>` : "";
     let thirdStat = "";
     const geoText = item.city && item.country
       ? `${item.city}, ${item.country}`
@@ -230,7 +208,7 @@ export function renderAuthorCards(authors, container, store) {
         <div class="rel-block">
           <div class="rel-value">${rel}</div>
           <div class="rel-track"><div class="rel-bar" style="width:${relPct}%"></div></div>
-          <div class="rel-caption">релевантность</div>
+          <div class="rel-caption">${relCaption}</div>
         </div>
       </div>
 
@@ -261,10 +239,6 @@ export function renderAuthorCards(authors, container, store) {
         <button type="button" class="${shortCls}" data-action="toggle-shortlist" data-author-id="${id}">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h9l3 3v13l-6-3-6 3z" fill="currentColor" fill-opacity=".14"></path></svg>
           <span data-short-text>${shortLabel}</span>
-        </button>
-        <button type="button" class="btn-chat" data-action="open-chat" data-author-id="${id}" title="Написать автору">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5C4 5.7 4.7 5 5.5 5h13c.8 0 1.5.7 1.5 1.5v8c0 .8-.7 1.5-1.5 1.5H9l-4 3v-3H5.5C4.7 16 4 15.3 4 14.5z" fill="currentColor" fill-opacity=".14"></path></svg>
-          <span>Диалог</span>
         </button>
       </div>
     </div>`;
@@ -318,128 +292,6 @@ export function renderMetadataBar(metadata, container) {
       </div>
     </div>
   </details>`;
-}
-
-export function renderShortlist(shortlist, container, store) {
-  if (!container) return;
-  if (!shortlist || shortlist.length === 0) {
-    container.innerHTML = `<div class="empty-state">
-      <div class="empty-title">Шортлист пуст</div>
-      <div class="empty-text">Добавляйте авторов из результатов подбора — кнопкой «В шортлист»</div>
-    </div>`;
-    return;
-  }
-
-  const items = shortlist.map((item) => {
-    const id = item.account_id ?? item.id ?? item.author_id ?? item.username;
-    const name = item.title || item.username || "Автор";
-    const handle = item.username ? `@${item.username}` : "";
-    const platform = item.platform || "";
-    const subs = formatCount(item.subscribers_count);
-    const er = item.static_avg_er != null ? `${Number(item.static_avg_er).toFixed(1)}%` : "—";
-    const rel = `${Math.round((item.final_score || 0) * 100)}%`;
-    const color = colorFor(name);
-    const geoText = item.city && item.country
-      ? `${item.city}, ${item.country}`
-      : (item.country || item.city || "");
-
-    return `<div class="shortlist-item" data-author-id="${id}">
-      <span class="avatar" style="width:40px;height:40px;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;">${escapeHtml(initials(name))}</span>
-      <div class="shortlist-item-info">
-        <div class="shortlist-item-name">${escapeHtml(name)}</div>
-        <div class="shortlist-item-sub">${handle ? escapeHtml(handle) : ""}${platform ? ` · ${escapeHtml(platform)}` : ""}${subs !== "—" ? ` · ${subs}` : ""}${er !== "—" ? ` · ER ${er}` : ""}${geoText ? ` · 📍 ${escapeHtml(geoText)}` : ""}</div>
-      </div>
-      <span class="badge-rel">${rel}</span>
-      <button type="button" class="btn-solid" data-action="open-chat" data-author-id="${id}">Написать</button>
-      <button type="button" class="btn-soft" data-action="remove-shortlist" data-author-id="${id}">Убрать</button>
-    </div>`;
-  }).join("");
-
-  container.innerHTML = `<div class="shortlist-list">${items}</div>`;
-}
-
-export function renderCRM(threads, activeThreadId, sidebarContainer, chatContainer, store) {
-  if (sidebarContainer) {
-    if (!threads || threads.length === 0) {
-      sidebarContainer.innerHTML = `<div class="empty-state">
-        <div class="empty-title">Нет диалогов</div>
-        <div class="empty-text">Откройте диалог с автором из результатов поиска</div>
-      </div>`;
-    } else {
-      const items = threads.map((t) => {
-        const last = t.messages && t.messages.length > 0 ? t.messages[t.messages.length - 1].text : "Нет сообщений";
-        const time = t.messages && t.messages.length > 0 ? formatTime(t.messages[t.messages.length - 1].time) : "";
-        const cls = t.id === activeThreadId ? "thread-item on" : "thread-item";
-        const color = colorFor(t.title);
-        return `<div class="${cls}" data-thread-id="${t.id}" data-action="select-thread">
-          <span class="avatar" style="width:38px;height:38px;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;">${escapeHtml(initials(t.title))}</span>
-          <div class="thread-info">
-            <div class="thread-name-row">
-              <div class="thread-name">${escapeHtml(t.title)}</div>
-              <span class="thread-time">${time}</span>
-            </div>
-            <div class="thread-last">${escapeHtml(last)}</div>
-          </div>
-        </div>`;
-      }).join("");
-      sidebarContainer.innerHTML = `<div class="thread-list">${items}</div>`;
-    }
-  }
-
-  if (chatContainer) {
-    const active = threads.find((t) => t.id === activeThreadId);
-    if (!active) {
-      chatContainer.innerHTML = `<div class="empty-state">
-        <div class="empty-title">Выберите диалог</div>
-        <div class="empty-text">Или начните новый из карточки автора</div>
-      </div>`;
-      return;
-    }
-
-    const messages = (active.messages || []).map((m) => {
-      const us = m.from === "us";
-      const rowCls = us ? "msg-row us" : "msg-row";
-      const bubbleCls = us ? "msg-bubble us" : "msg-bubble";
-      const timeCls = us ? "msg-time us" : "msg-time";
-      return `<div class="${rowCls}">
-        <div class="${bubbleCls}">
-          <div>${escapeHtml(m.text)}</div>
-          <div class="${timeCls}">${formatTime(m.time)}</div>
-        </div>
-      </div>`;
-    }).join("");
-
-    const quickReplies = [
-      "Здравствуйте! Мы ищем авторов для коллаборации",
-      "Расскажите о вашей аудитории",
-      "Какие форматы вам интересны?",
-      "Обсудим условия сотрудничества?",
-    ].map((q) => `<button class="quick-btn" data-action="quick-reply" data-text="${escapeHtml(q)}">
-      <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="#6366f1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 13.8 9 20 10.8 13.8 12.6 12 19 10.2 12.6 4 10.8 10.2 9z"></path></svg>
-      <span>${escapeHtml(q)}</span>
-    </button>`).join("");
-
-    chatContainer.innerHTML = `
-      <div class="crm-chat-head">
-        <span class="avatar" style="width:40px;height:40px;background:${colorFor(active.title)};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;">${escapeHtml(initials(active.title))}</span>
-        <div>
-          <div class="crm-chat-name">${escapeHtml(active.title)}</div>
-          <div class="crm-chat-sub">${active.username ? escapeHtml(`@${active.username}`) : ""}${active.platform ? ` · ${escapeHtml(active.platform)}` : ""}</div>
-        </div>
-        <span class="badge-followup">авто follow-up</span>
-      </div>
-      <div class="chat-feed" data-chat-feed>${messages}</div>
-      <div class="chat-composer">
-        <div class="quick-replies">${quickReplies}</div>
-        <div class="composer-row">
-          <textarea class="composer-textarea" data-composer rows="2" placeholder="Напишите сообщение…"></textarea>
-          <button class="btn-primary" data-action="send-message">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12 16-8-6 16-2-7z"></path></svg>
-            <span>Отправить</span>
-          </button>
-        </div>
-      </div>`;
-  }
 }
 
 export function showToast(message, type = "success") {

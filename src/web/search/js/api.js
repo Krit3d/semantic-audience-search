@@ -52,6 +52,16 @@ export class SearchApiClient {
     return this._post("/api/v1/search/analyze-brand", payload, signal);
   }
 
+  async searchSimilar(accountIds, signal) {
+    const headers = { Accept: "application/json" };
+    try {
+      const token = localStorage.getItem("creatorflow_token");
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+    } catch {
+    }
+    return this._post("/api/v1/search/similar", { account_ids: accountIds, limit: 40 }, signal, headers);
+  }
+
   async exportToCrmShortlist(accountIds, userEmail) {
     const headers = { "Content-Type": "application/json" };
     const token = localStorage.getItem("cf_token");

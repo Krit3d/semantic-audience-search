@@ -1,13 +1,13 @@
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from src.api.dependencies import get_current_user, get_db, get_search_service
-from src.api.schemas import BrandAnalysisRequest, BrandAnalysisResponse, SearchPlanRequest, SearchPlanResponse, SearchRequest, SearchResponse
+from src.api.schemas import BrandAnalysisRequest, BrandAnalysisResponse, SearchPlanRequest, SearchPlanResponse, SearchRequest, SearchResponse, SimilarSearchRequest
 from src.api.services.search import SearchService
 from src.db.database import Database
-from src.db.models import User
+from src.db.models import Account, User
 from src.utils.countries import get_all_countries
 from src.utils.languages import get_all_languages
 from src.utils.rate_limiter import rate_limit
@@ -80,3 +80,62 @@ async def analyze_brand(
     _rate_limit: None = Depends(rate_limit(max_requests=20, window_seconds=60)),
 ) -> BrandAnalysisResponse:
     return await service.analyze_brand(payload)
+
+@router.post("/similar", response_model=SearchResponse, response_model_exclude_none=True)
+async def search_similar(
+    payload: SimilarSearchRequest,
+    db: Database = Depends(get_db),
+    service: SearchService = Depends(get_search_service),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit(max_requests=20, window_seconds=60)),
+) -> SearchResponse:
+    raw_ids: list[str] = []
+    for aid in payload.account_ids:
+        cleaned = str(aid).strip().lstrip("@")
+        if cleaned and cleaned.lower() not in {"undefined", "null"}:
+            raw_ids.append(cleaned)
+    raw_ids = list(dict.fromkeys(raw_ids))[:50]
+    if not raw_ids:
+        raise HTTPException(status_code=400, detail="Не переданы авторы для поиска похожих")
+    numeric_ids: list[int] = [int(x) for x in raw_ids if x.isdigit()]
+    lowered = [x.lower() for x in raw_ids]
+    async with db.async_session() as session:
+        conditions = []
+        if numeric_ids:
+            conditions.append(Account.id.in_(numeric_ids))
+        if lowered:
+            conditions.append(func.lower(Account.username).in_(lowered))
+            conditions.append(func.lower(Account.username).in_([f"@{u}" for u in lowered]))
+        stmt = select(Account).where(or_(*conditions)) if conditions else None
+        seeds = list((await session.execute(stmt)).scalars().all()) if stmt is not None else []
+    if not seeds:
+        raise HTTPException(status_code=404, detail="Авторы не найдены в базе")
+    seed_ids = {a.id for a in seeds}
+    query_parts: list[str] = []
+    for acc in seeds[:5]:
+        if acc.category_path:
+            query_parts.append(acc.category_path.replace("/", " "))
+        if acc.title:
+            query_parts.append(acc.title)
+    seed_names = {
+        (f"@{a.username}" if a.username and not a.username.startswith("@") else a.username or a.title or "")
+        for a in seeds
+    }
+    query = " ".join(query_parts).strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Недостаточно данных об авторах для подбора похожих")
+    request_payload = SearchRequest(query=query[:2000], limit=min(payload.limit + len(seed_ids) + 5, 100), author_type="all")
+    response = await service.execute_search(request_payload)
+    filtered = []
+    for item in response.items:
+        if item.account_id in seed_ids:
+            continue
+        item.match_type = "affinity"
+        if not item.affinity_reason and seed_names:
+            item.affinity_reason = "похож на " + ", ".join(sorted(n for n in seed_names if n)[:3])
+        filtered.append(item)
+        if len(filtered) >= payload.limit:
+            break
+    response.items = filtered
+    response.total = len(filtered)
+    return response

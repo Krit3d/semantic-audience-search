@@ -46,7 +46,7 @@ class ScrapeCreatorsClient:
             async with self._session_lock:
                 if self._session is None or self._session.closed:
                     self._session = aiohttp.ClientSession(
-                        timeout=aiohttp.ClientTimeout(total=30),
+                        timeout=aiohttp.ClientTimeout(total=60),
                         headers={
                             "User-Agent": "ScrapeCreatorsClient/1.0 (Production)",
                         },
@@ -72,7 +72,7 @@ class ScrapeCreatorsClient:
     def _get_network_retry_base_delay(self) -> float:
         delay = getattr(self._settings, 'network_retry_base_delay_s', None)
         if delay is None:
-            return 1.0
+            return 3.0
         return delay
 
     async def _request(
@@ -103,7 +103,7 @@ class ScrapeCreatorsClient:
             request_kwargs["json"] = json_data
 
         if "transcript" in endpoint:
-            request_kwargs["timeout"] = aiohttp.ClientTimeout(total=35.0)
+            request_kwargs["timeout"] = aiohttp.ClientTimeout(total=60.0)
 
         for attempt in range(actual_max_retries + 1):
             is_server_fault = False

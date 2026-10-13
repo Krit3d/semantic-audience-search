@@ -187,7 +187,7 @@ class Settings(BaseSettings):
         description="Retry count for transient network failures",
     )
     network_retry_base_delay_s: float = Field(
-        default=1.0,
+        default=3.0,
         description="Base delay in seconds for retry backoff",
     )
     proxy_url: str | None = Field(

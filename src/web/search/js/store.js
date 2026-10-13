@@ -38,13 +38,58 @@ export const DEFAULT_COUNTRIES = {
   GB: "Великобритания",
 };
 
+const PERSISTED_FIELDS = [
+  "searchQuery",
+  "brandDescription",
+  "targetAudienceDescription",
+  "directCluster",
+  "audienceClusters",
+  "isAudienceConfirmed",
+  "currentStep",
+  "selectedCountries",
+  "selectedGender",
+  "isGenderManuallySet",
+  "isCountryManuallySet",
+  "selectedLanguages",
+  "minFollowers",
+  "maxFollowers",
+  "minErr",
+  "platformFilter",
+  "sortFilter",
+  "reachFilter",
+  "authorType",
+  "matchTypeFilter",
+  "selectedTone",
+  "selectedHormones",
+  "stopTopicsInput",
+  "precomputedPlan",
+  "inferredFilters",
+  "searchResults",
+  "queryMetadata",
+  "searchMode",
+];
+
 function normalizeCountryCode(value) {
   return String(value || "").trim().toUpperCase();
 }
 
+function getUserSuffix() {
+  try {
+    const raw = localStorage.getItem("creatorflow_user");
+    if (raw) {
+      const user = JSON.parse(raw);
+      if (user && (user.id || user.email)) {
+        return String(user.id || user.email);
+      }
+    }
+  } catch {
+    return "anonymous";
+  }
+  return "anonymous";
+}
+
 export class AppStore {
   constructor() {
-    this.activeTab = "search";
     window.addEventListener("storage", () => this.syncUserSession());
     window.addEventListener("creatorflow:logout", () => this.syncUserSession(true));
     this.searchQuery = "";
@@ -64,6 +109,7 @@ export class AppStore {
     this.selectedLanguages = [];
     this.minFollowers = null;
     this.maxFollowers = null;
+    this.minErr = null;
     this.platformFilter = "all";
     this.sortFilter = "relevance";
     this.reachFilter = "all";
@@ -76,51 +122,98 @@ export class AppStore {
     this.inferredFilters = null;
     this.searchResults = [];
     this.queryMetadata = null;
+    this.searchMode = "direct";
     this.shortlist = readStorage(this.getShortlistKey(), []);
-    this.threads = readStorage(this.getThreadsKey(), []);
-    this.activeThreadId = null;
-  }
-
-  getThreadsKey() {
-    try {
-      const raw = localStorage.getItem("creatorflow_user");
-      if (raw) {
-        const user = JSON.parse(raw);
-        if (user && (user.id || user.email)) {
-          return "collabrama_crm_threads_" + (user.id || user.email);
+    this._persistTimer = null;
+    this.restoreSession();
+    return new Proxy(this, {
+      set: (target, prop, value) => {
+        target[prop] = value;
+        if (typeof prop === "string" && PERSISTED_FIELDS.includes(prop)) {
+          target.schedulePersist();
         }
-      }
-    } catch {
-      return "collabrama_crm_threads_anonymous";
-    }
-    return "collabrama_crm_threads_anonymous";
+        return true;
+      },
+    });
   }
 
   getShortlistKey() {
-    try {
-      const raw = localStorage.getItem("creatorflow_user");
-      if (raw) {
-        const user = JSON.parse(raw);
-        if (user && (user.id || user.email)) {
-          return "collabrama_shortlist_" + (user.id || user.email);
-        }
-      }
-    } catch {
-      return "collabrama_shortlist_anonymous";
-    }
-    return "collabrama_shortlist_anonymous";
+    return "collabrama_shortlist_" + getUserSuffix();
+  }
+
+  getSessionKey() {
+    return "collabrama_session_" + getUserSuffix();
   }
 
   syncUserSession(clear) {
     if (clear) {
       this.shortlist = [];
-      this.threads = [];
-      this.activeThreadId = null;
+      this.clearSession();
+      this.resetAudienceState();
+      this.brandDescription = "";
+      this.searchQuery = "";
     } else {
       this.shortlist = readStorage(this.getShortlistKey(), []);
-      this.threads = readStorage(this.getThreadsKey(), []);
+      this.restoreSession();
     }
     window.dispatchEvent(new CustomEvent("collabrama:store_updated"));
+  }
+
+  serializeSession() {
+    const snapshot = {};
+    for (const field of PERSISTED_FIELDS) {
+      snapshot[field] = this[field];
+    }
+    return snapshot;
+  }
+
+  schedulePersist() {
+    if (this._persistTimer) {
+      clearTimeout(this._persistTimer);
+    }
+    this._persistTimer = setTimeout(() => {
+      this._persistTimer = null;
+      this.persistSession();
+    }, 300);
+  }
+
+  persistSession() {
+    try {
+      sessionStorage.setItem(this.getSessionKey(), JSON.stringify(this.serializeSession()));
+    } catch {
+      return;
+    }
+  }
+
+  restoreSession() {
+    let snapshot = null;
+    try {
+      const raw = sessionStorage.getItem(this.getSessionKey());
+      snapshot = raw ? JSON.parse(raw) : null;
+    } catch {
+      snapshot = null;
+    }
+    if (!snapshot || typeof snapshot !== "object") return;
+    for (const field of PERSISTED_FIELDS) {
+      if (field in snapshot && snapshot[field] !== undefined) {
+        this[field] = snapshot[field];
+      }
+    }
+    if (!Array.isArray(this.searchResults)) this.searchResults = [];
+    if (!Array.isArray(this.selectedCountries)) this.selectedCountries = [];
+    if (!Array.isArray(this.selectedLanguages)) this.selectedLanguages = [];
+    if (!Array.isArray(this.selectedHormones)) this.selectedHormones = [];
+    if (!Array.isArray(this.audienceClusters)) this.audienceClusters = [];
+    if (![1, 2, 3].includes(this.currentStep)) this.currentStep = 1;
+    if (this.searchMode !== "similar") this.searchMode = "direct";
+  }
+
+  clearSession() {
+    try {
+      sessionStorage.removeItem(this.getSessionKey());
+    } catch {
+      return;
+    }
   }
 
   get selectedLanguage() {
@@ -254,6 +347,7 @@ export class AppStore {
       platform: this.platformFilter || "all",
       min_followers: (this.minFollowers && Number(this.minFollowers) > 0) ? Number(this.minFollowers) : null,
       max_followers: (this.maxFollowers && Number(this.maxFollowers) > 0) ? Number(this.maxFollowers) : null,
+      min_err: (this.minErr && Number(this.minErr) > 0) ? Number(this.minErr) : null,
       countries: this.selectedCountries.length > 0 ? this.selectedCountries : null,
       gender: this.isGenderManuallySet || this.selectedGender !== "both" ? this.selectedGender : null,
       languages: this.selectedLanguages.length > 0 ? this.selectedLanguages : null,
@@ -277,6 +371,7 @@ export class AppStore {
     this.precomputedPlan = null;
     this.searchResults = [];
     this.queryMetadata = null;
+    this.searchMode = "direct";
     this.selectedCountries = [];
     this.selectedGender = "both";
     this.isGenderManuallySet = false;
@@ -286,23 +381,13 @@ export class AppStore {
     this.selectedHormones = [];
     this.minFollowers = null;
     this.maxFollowers = null;
+    this.minErr = null;
     this.stopTopicsInput = "";
     this.sortFilter = "relevance";
+    this.reachFilter = "all";
+    this.matchTypeFilter = "all";
+    this.platformFilter = "all";
     this.searchQuery = this.brandDescription || "";
-  }
-
-  toggleHormone(hormone) {
-    const index = this.selectedHormones.indexOf(hormone);
-    if (index >= 0) {
-      this.selectedHormones.splice(index, 1);
-      return;
-    }
-    if (this.selectedHormones.length < 2) {
-      this.selectedHormones.push(hormone);
-      return;
-    }
-    this.selectedHormones.shift();
-    this.selectedHormones.push(hormone);
   }
 
   toggleShortlist(author) {
@@ -317,39 +402,5 @@ export class AppStore {
 
   isInShortlist(accountId) {
     return this.shortlist.some((a) => String(a.account_id ?? a.id ?? "") === String(accountId));
-  }
-
-  openChatWithAuthor(author) {
-    let thread = this.threads.find((t) => t.authorId === author.account_id);
-    if (!thread) {
-      thread = {
-        id: `thread_${author.account_id}_${Date.now()}`,
-        authorId: author.account_id,
-        title: author.title || author.username || "Автор",
-        username: author.username || "",
-        platform: author.platform || "",
-        url: author.url || "",
-        messages: [],
-        createdAt: Date.now(),
-      };
-      this.threads.push(thread);
-      writeStorage(this.getThreadsKey(), this.threads);
-    }
-    this.activeThreadId = thread.id;
-    this.activeTab = "crm";
-  }
-
-  sendMessage(threadId, text) {
-    const trimmed = (text || "").trim();
-    if (!trimmed) return;
-    const thread = this.threads.find((t) => t.id === threadId);
-    if (!thread) return;
-    thread.messages.push({
-      id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      text: trimmed,
-      from: "us",
-      time: Date.now(),
-    });
-    writeStorage(this.getThreadsKey(), this.threads);
   }
 }

@@ -142,6 +142,7 @@ export interface DealItem {
   author: DealAuthorSummary | null;
   last_message: DealMessageItem | null;
   unread_count: number;
+  erid?: string | null;
 }
 
 export interface DealCreatePayload {
@@ -192,6 +193,185 @@ export interface CommunicationChannelItem {
 const TOKEN_KEY = 'creatorflow_token';
 const USER_KEY = 'creatorflow_user';
 
+export interface BrandProduct {
+  name: string;
+  desc: string;
+  tags: string[];
+  hue: number;
+}
+
+export interface BrandPayType {
+  label: string;
+  on: boolean;
+  rate: string;
+  def?: boolean;
+  custom?: boolean;
+}
+
+export interface BrandRequisites {
+  company?: string;
+  inn?: string;
+  kpp?: string;
+  ogrn?: string;
+  address?: string;
+  contact?: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface BrandKb {
+  short: string;
+  products: BrandProduct[];
+  usp: string[];
+  allowed: string[];
+  forbidden: string[];
+  mentions: string[];
+  pay_types: BrandPayType[];
+  requisites: BrandRequisites;
+}
+
+export interface BrandItem {
+  id: number;
+  name: string;
+  category: string;
+  status: 'Активен' | 'Черновик' | string;
+  hue: number;
+  desc: string;
+  deals_count: number;
+  shortlist_count: number;
+  kb: BrandKb;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BrandPayload {
+  name: string;
+  category?: string;
+  status?: string;
+  hue?: number;
+  desc?: string;
+  kb?: Partial<BrandKb>;
+}
+
+export interface EridCheckItem {
+  id: number;
+  checked_at: string;
+  result: string;
+  checked_by: string;
+}
+
+export interface EridRecord {
+  id: number;
+  code: string;
+  deal_id: number | null;
+  deal_title: string | null;
+  author_handle: string | null;
+  brand_id: number | null;
+  brand_name: string | null;
+  status: 'Заполняют данные' | 'Активен' | 'Ожидает публикации' | 'Опубликован' | 'Архивирован' | string;
+  pub_link: string | null;
+  verdict: 'ok' | 'bad' | null;
+  created_at: string;
+  checks: EridCheckItem[];
+}
+
+export interface EridCreatePayload {
+  deal_id?: number | null;
+  brand_id?: number | null;
+  code?: string | null;
+}
+
+export interface EridUpdatePayload {
+  status?: string;
+  pub_link?: string | null;
+  verdict?: 'ok' | 'bad' | null;
+}
+
+export interface PublicationItem {
+  id: number;
+  deal_id: number | null;
+  author_id: string;
+  author_handle: string | null;
+  brand_id: number | null;
+  brand_name: string | null;
+  platform: string;
+  type: string;
+  text: string;
+  published_at: string;
+  url: string | null;
+  views: number;
+  clicks: number;
+  revenue: number;
+  cost: number;
+  erid: string | null;
+  sync_status: 'ok' | 'syncing' | 'waiting' | 'error' | string;
+}
+
+export interface AnalyticsFunnelStep { stage: number; label: string; count: number }
+export interface AnalyticsRevenuePoint { period: string; revenue: number }
+export interface AnalyticsTopAuthor { author_id: string; handle: string; revenue: number }
+export interface AnalyticsNetwork { platform: string; share: number }
+
+export interface AnalyticsSummary {
+  period: string;
+  funnel: AnalyticsFunnelStep[];
+  revenue: AnalyticsRevenuePoint[];
+  top_authors: AnalyticsTopAuthor[];
+  networks: AnalyticsNetwork[];
+  totals: { revenue: number; deals: number; publications: number; avg_roas: number | null };
+}
+
+export interface ShortlistItem {
+  account_id: string;
+  added_at: string;
+  author: DealAuthorSummary | null;
+}
+
+export interface SimilarSearchItem {
+  account_id: number;
+  platform: string;
+  username: string | null;
+  title: string;
+  url: string | null;
+  final_score: number;
+  static_avg_er: number | null;
+  subscribers_count: number | null;
+  country: string | null;
+  city: string | null;
+  primary_language: string | null;
+  primary_tone: string | null;
+  match_type: string;
+  affinity_reason: string | null;
+  description: string | null;
+}
+
+export interface SimilarSearchResponse {
+  items: SimilarSearchItem[];
+  total: number;
+  message: string | null;
+}
+
+export interface CreatorImportPreviewItem {
+  row: number;
+  username: string | null;
+  platform: string | null;
+  status: 'new' | 'exists' | 'skip';
+  reason: string | null;
+}
+
+export interface CreatorImportPreview {
+  items: CreatorImportPreviewItem[];
+  total: number;
+  new_count: number;
+  exists_count: number;
+  skip_count: number;
+}
+
+export interface CreatorImportResult {
+  added_count: number;
+  skipped_count: number;
+}
+
 const ROOT_API_URL = (import.meta.env.VITE_API_URL || 'https://api.collabrama.ru/api/v1').replace(/\/+$/, '');
 const API_BASE = `${ROOT_API_URL.replace(/\/crm\/?$/, '')}/crm`;
 export const MEDIA_SERVER_BASE = (() => {
@@ -234,9 +414,11 @@ async function request<T>(path: string, init: RequestInit = {}, baseUrl: string 
   }
   if (!response.ok) {
     let detail = `Ошибка запроса (${response.status})`;
+    if (response.status === 403) detail = 'Недостаточно прав для этого действия';
+    if (response.status >= 500) detail = 'Сервер временно недоступен. Попробуйте позже';
     try {
       const body = (await response.json()) as { detail?: unknown };
-      if (typeof body.detail === 'string') detail = body.detail;
+      if (typeof body.detail === 'string' && response.status !== 403 && response.status < 500) detail = body.detail;
     } catch {
       /* ignore parse failures */
     }
@@ -452,6 +634,19 @@ export const api = {
     return Boolean(localStorage.getItem(TOKEN_KEY));
   },
 
+  saveSession(token: string, user: Record<string, unknown>): void {
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  },
+
+  updateUser(user: Record<string, unknown>): void {
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  },
+
+  async getMe(): Promise<Record<string, unknown>> {
+    return request<Record<string, unknown>>('/auth/me');
+  },
+
   getCurrentUser(): Record<string, unknown> | null {
     return getStoredUser();
   },
@@ -509,6 +704,108 @@ export const api = {
       throw new ApiError(detail, response.status);
     }
   },
+
+  async getBrands(): Promise<BrandItem[]> {
+    return request<BrandItem[]>('/brands');
+  },
+
+  async getBrand(brandId: number): Promise<BrandItem> {
+    return request<BrandItem>(`/brands/${brandId}`);
+  },
+
+  async createBrand(payload: BrandPayload): Promise<BrandItem> {
+    return request<BrandItem>('/brands', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  async updateBrand(brandId: number, payload: BrandPayload): Promise<BrandItem> {
+    return request<BrandItem>(`/brands/${brandId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
+  async deleteBrand(brandId: number): Promise<{ status: string; brand_id: number }> {
+    return request<{ status: string; brand_id: number }>(`/brands/${brandId}`, { method: 'DELETE' });
+  },
+
+  async getEridRecords(params: { brandId?: number; status?: string } = {}): Promise<EridRecord[]> {
+    const query = new URLSearchParams();
+    if (params.brandId !== undefined) query.set('brand_id', String(params.brandId));
+    if (params.status) query.set('status', params.status);
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request<EridRecord[]>(`/erid${suffix}`);
+  },
+
+  async createEridRecord(payload: EridCreatePayload): Promise<EridRecord> {
+    return request<EridRecord>('/erid', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  async updateEridRecord(recordId: number, payload: EridUpdatePayload): Promise<EridRecord> {
+    return request<EridRecord>(`/erid/${recordId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
+  async addEridCheck(recordId: number, result: string): Promise<EridRecord> {
+    return request<EridRecord>(`/erid/${recordId}/checks`, { method: 'POST', body: JSON.stringify({ result }) });
+  },
+
+  async getPublications(params: { brandId?: number } = {}): Promise<PublicationItem[]> {
+    const query = new URLSearchParams();
+    if (params.brandId !== undefined) query.set('brand_id', String(params.brandId));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request<PublicationItem[]>(`/publications${suffix}`);
+  },
+
+  async getAnalyticsSummary(params: { period?: string; brandId?: number } = {}): Promise<AnalyticsSummary> {
+    const query = new URLSearchParams();
+    if (params.period) query.set('period', params.period);
+    if (params.brandId !== undefined) query.set('brand_id', String(params.brandId));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request<AnalyticsSummary>(`/analytics/summary${suffix}`);
+  },
+
+  async getShortlist(): Promise<ShortlistItem[]> {
+    return request<ShortlistItem[]>('/shortlist');
+  },
+
+  async removeFromShortlist(accountId: string): Promise<{ status: string; account_id: string }> {
+    return request<{ status: string; account_id: string }>(`/shortlist/${encodeURIComponent(accountId)}`, { method: 'DELETE' });
+  },
+
+  async findSimilarAuthors(accountIds: string[]): Promise<SimilarSearchResponse> {
+    return request<SimilarSearchResponse>('/search/similar', {
+      method: 'POST',
+      body: JSON.stringify({ account_ids: accountIds }),
+    }, ROOT_API_URL);
+  },
+
+  async previewCreatorsImport(file: File): Promise<CreatorImportPreview> {
+    const form = new FormData();
+    form.append('file', file);
+    const headers: Record<string, string> = {};
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const response = await fetch(`${API_BASE}/creators/import/preview`, { method: 'POST', headers, body: form });
+    if (response.status === 401) {
+      api.logout();
+      window.dispatchEvent(new CustomEvent('creatorflow:auth_expired'));
+      throw new ApiError('Сессия истекла. Пожалуйста, войдите снова.', 401);
+    }
+    if (!response.ok) {
+      let detail = `Ошибка запроса (${response.status})`;
+      try {
+        const body = (await response.json()) as { detail?: unknown };
+        if (typeof body.detail === 'string') detail = body.detail;
+      } catch {
+        /* ignore parse failures */
+      }
+      throw new ApiError(detail, response.status);
+    }
+    return (await response.json()) as CreatorImportPreview;
+  },
+
+  async commitCreatorsImport(items: { username: string; platform: string }[]): Promise<CreatorImportResult> {
+    return request<CreatorImportResult>('/creators/import/commit', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    });
+  },
 };
 
 export function mapDealItemToDeal(item: DealItem): Deal {
@@ -529,6 +826,7 @@ export function mapDealItemToDeal(item: DealItem): Deal {
     terms: item.terms || `Фиксированная оплата ${item.budget} ₽`,
     exclusive: false,
     edits: 2,
+    erid: item.erid ?? undefined,
   };
 }
 

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { X, ChevronLeft, ChevronRight, FileText, Check, AlertTriangle, ZoomIn, ZoomOut, Download, PenTool, Mail, Send, Link2, BookOpen } from 'lucide-react';
-import { TEMPLATES, authorById, brandById, fmtMoney, type Deal } from '../data';
+import { TEMPLATES, fmtMoney, resolveAuthor, type Deal } from '../data';
 import { Modal, Badge, Btn, Field, inputCls, useToast, Toggle, Avatar } from '../components/ui';
+import { brandLetter, findBrand, useBrands } from '../services/brands';
 
 const STEPS = ['Выбор шаблона', 'Заполнение данных', 'Предпросмотр', 'Отправка'];
 
@@ -16,7 +17,17 @@ export default function ContractWizard({ deal, onClose, onDone }: { deal: Deal; 
   const [zoom, setZoom] = useState(100);
   const [method, setMethod] = useState('email');
   const [toTimeline, setToTimeline] = useState(true);
-  const b = brandById(deal.brandId), a = authorById(deal.authorId);
+  const a = resolveAuthor(deal);
+  const brands = useBrands();
+  const foundBrand = findBrand(brands, deal.brandId);
+  const b = {
+    name: foundBrand?.name ?? deal.brandId,
+    letter: brandLetter(foundBrand, deal.brandId),
+    hue: foundBrand?.hue ?? 235,
+    mentions: foundBrand?.kb?.mentions ?? [],
+    company: foundBrand?.kb?.requisites?.company ?? '',
+    inn: foundBrand?.kb?.requisites?.inn ?? '',
+  };
 
   const checklist = [
     { ok: true, t: 'Предмет договора указан' },
@@ -105,17 +116,18 @@ export default function ContractWizard({ deal, onClose, onDone }: { deal: Deal; 
             <aside className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 h-fit">
               <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 uppercase tracking-wide mb-3"><BookOpen size={13} />Подсказки из базы знаний</div>
               <div className="flex flex-col gap-2.5">
-                <div className="rounded-lg bg-white border border-indigo-100 p-3 text-[11.5px] font-medium text-gray-700 leading-relaxed">
-                  Рекомендуем пункт о <b>неэксклюзивности</b> — {a.nick} часто работает с конкурентами категории (по истории сделок).
-                </div>
-                <div className="rounded-lg bg-white border border-indigo-100 p-3 text-[11.5px] font-medium text-gray-700 leading-relaxed">
-                  {b.name} требует <b>обязательное упоминание ERID</b> в первых 3 кадрах (из базы знаний бренда).
-                </div>
-                {b.mentions[0] && (
+                {b.mentions[0] ? (
                   <div className="rounded-lg bg-white border border-indigo-100 p-3 text-[11.5px] font-medium text-gray-700 leading-relaxed">
-                    Обязательное упоминание: <b>{b.mentions[0]}</b>
+                    Обязательное упоминание из базы знаний: <b>{b.mentions[0]}</b>
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-white border border-indigo-100 p-3 text-[11.5px] font-medium text-gray-700 leading-relaxed">
+                    В базе знаний бренда нет обязательных упоминаний — добавьте их в настройках бренда.
                   </div>
                 )}
+                <div className="rounded-lg bg-white border border-indigo-100 p-3 text-[11.5px] font-medium text-gray-700 leading-relaxed">
+                  Пункт о маркировке ERID включён по умолчанию — это требование 38-ФЗ «О рекламе».
+                </div>
               </div>
             </aside>
           </div>
@@ -141,8 +153,8 @@ export default function ContractWizard({ deal, onClose, onDone }: { deal: Deal; 
                     <div className="text-[10.5px] font-semibold text-gray-400 mt-1">№ 2024-{deal.id.toUpperCase()} · г. Москва · {deal.date}</div>
                   </div>
                   <div className="mt-4 space-y-2 text-[10px] leading-relaxed text-gray-600 font-medium">
-                    <p><b>Заказчик:</b> ООО «{b.name}» (ИНН 7712345678, ОГРН 1157746123456)</p>
-                    <p><b>Исполнитель:</b> {a.nick}, самозанятый (ИНН 771234567890)</p>
+                    <p><b>Заказчик:</b> {b.company || `ООО «${b.name}»`}{b.inn ? ` (ИНН ${b.inn})` : ' (реквизиты заполняются в настройках бренда)'}</p>
+                    <p><b>Исполнитель:</b> {a.nick} (реквизиты заполняются автором)</p>
                     <p><b>1. Предмет договора.</b> Исполнитель создаёт и размещает рекламный материал формата «{deal.type}» — «{deal.title}».</p>
                     <p><b>2. Стоимость и порядок оплаты.</b> {deal.terms}. Оплата в течение 10 рабочих дней после подписания Акта.</p>
                     <p><b>3. Правки.</b> Заказчик вправе запросить до {edits} бесплатных правок в рамках ТЗ.{exclusive ? ' Исполнитель гарантирует эксклюзивность на 30 дней.' : ''}</p>

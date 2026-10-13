@@ -2,8 +2,9 @@ import { Bold, BookOpen, Check, Download, FilePlus2, Italic, List, MessageCircle
 import { useEffect, useRef, useState } from 'react';
 import { FakeQR, SocialIcon } from '../components/icons';
 import { Avatar, Badge, Btn, CopyBtn, Modal, SidePanel, Tabs, Tip, useToast } from '../components/ui';
-import { ARCHIVED_STAGE, brandById, fmtMoney, getStage, resolveAuthor, STAGES, type Deal, type DealMsg } from '../data';
+import { ARCHIVED_STAGE, fmtMoney, getStage, resolveAuthor, STAGES, type Deal, type DealMsg } from '../data';
 import { api, type DealMessageItem } from '../services/api';
+import { brandLetter, findBrand, useBrands } from '../services/brands';
 
 type DocType = 'pdf' | 'doc' | 'img' | 'other';
 interface DealDocument {
@@ -45,7 +46,21 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
   });
   const chatRef = useRef<HTMLDivElement>(null);
   const termsRef = useRef<HTMLDivElement>(null);
-  const a = resolveAuthor(deal), b = brandById(deal.brandId);
+  const a = resolveAuthor(deal);
+  const brands = useBrands();
+  const foundBrand = findBrand(brands, deal.brandId);
+  const b = {
+    id: foundBrand ? String(foundBrand.id) : deal.brandId,
+    name: foundBrand?.name ?? deal.brandId,
+    letter: brandLetter(foundBrand, deal.brandId),
+    hue: foundBrand?.hue ?? 235,
+    shortDesc: foundBrand?.kb?.short ?? '',
+    status: foundBrand?.status ?? 'Активен',
+    usp: foundBrand?.kb?.usp ?? [],
+    allowed: foundBrand?.kb?.allowed ?? [],
+    forbidden: foundBrand?.kb?.forbidden ?? [],
+    payTypes: (foundBrand?.kb?.pay_types ?? []).map((p, i) => ({ id: String(i), label: p.label, on: p.on, rate: p.rate, def: p.def })),
+  };
   const stage = getStage(deal.stage);
 
   const storageKey = `creatorflow_docs_${deal.id}`;

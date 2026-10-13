@@ -1,9 +1,10 @@
-import { Archive, ArchiveRestore, Briefcase, Check, ChevronDown, Download, Eye, FileText, ImageOff, Loader2, Paperclip, Plus, Search, Send, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { SocialIcon } from '../components/icons';
-import { Avatar, Badge, Btn, Card, inputCls, Modal, Tip, useToast } from '../components/ui';
-import { ARCHIVED_STAGE, brandById, BRANDS, fmtMoney, getStage, resolveAuthor, STAGES, type Author, type Deal, type DealMsg, type Social } from '../data';
-import { api, normalizeSocial, resolveMediaUrl, type CommunicationChannelItem, type CreatorRecord, type DealMessageItem, type FileUploadResponse } from '../services/api';
+import { Archive, ArchiveRestore, Briefcase, Check, ChevronDown, Download, FileText, ImageOff, Loader2, Paperclip, Plus, Search, Send, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SocialIcon } from '../../components/icons';
+import { Empty, ErrorState, SkeletonLines } from '../../components/kit';
+import { Avatar, Badge, Btn, inputCls, Modal, Tip, useToast } from '../../components/ui';
+import { fmtMoney, getStage, type Author, type Deal, type DealMsg, type Social } from '../../data';
+import { api, normalizeSocial, resolveMediaUrl, type CommunicationChannelItem, type CreatorRecord, type DealMessageItem, type FileUploadResponse } from '../../services/api';
 
 const STAGE_TONES: Record<number, string> = {
   6: 'green',
@@ -92,80 +93,11 @@ function VideoPlayer({ src }: { src: string }) {
   );
 }
 
-/* ================= СДЕЛКИ ================= */
-export function DealsList({ deals, onOpenDeal }: { deals: Deal[]; onOpenDeal: (id: string) => void }) {
-  const [q, setQ] = useState('');
-  const [fStage, setFStage] = useState('all');
-  const [fBrand, setFBrand] = useState('all');
-  const list = deals.filter(d =>
-    (!q || d.title.toLowerCase().includes(q.toLowerCase()) || resolveAuthor(d).nick.includes(q.toLowerCase())) &&
-    (fStage === 'all' || d.stage === Number(fStage)) &&
-    (fBrand === 'all' || d.brandId === fBrand)
-  );
-  return (
-    <div className="h-full overflow-y-auto scroll-thin">
-      <div className="px-6 pt-5 pb-4 bg-gradient-to-b from-white to-transparent">
-        <div className="flex items-end justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-[22px] font-display font-semibold text-gray-900">Сделки</h1>
-            <p className="text-[12.5px] font-medium text-gray-400 mt-1">{deals.length} сделок · суммарный бюджет {fmtMoney(deals.reduce((a, d) => a + d.budget, 0))}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" />
-              <input className={inputCls + ' !w-56 !pl-9'} placeholder="Название или автор…" value={q} onChange={e => setQ(e.target.value)} />
-            </div>
-            <select className={selCls} value={fStage} onChange={e => setFStage(e.target.value)}>
-              <option value="all">Все этапы</option>
-              <option value="0">{ARCHIVED_STAGE.name}</option>
-              {STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            <select className={selCls} value={fBrand} onChange={e => setFBrand(e.target.value)}>
-              <option value="all">Все бренды</option>
-              {BRANDS.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </div>
-        </div>
-      </div>
-      <div className="px-6 pb-6">
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto scroll-thin">
-            <table className="w-full text-[12.5px] min-w-[900px]">
-              <thead>
-                <tr className="text-left text-[11px] font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100 bg-slate-50/60">
-                  {['Сделка', 'Бренд', 'Автор', 'Тип', 'Бюджет', 'Этап', 'Публикация', ''].map((h, i) => <th key={i} className="px-4 py-2.5 whitespace-nowrap">{h}</th>)}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {list.map(d => {
-                  const a = resolveAuthor(d), b = brandById(d.brandId), s = getStage(d.stage);
-                  return (
-                    <tr key={d.id} onClick={() => onOpenDeal(d.id)} className="group cursor-pointer hover:bg-indigo-50/40 transition-colors">
-                      <td className="px-4 py-3 max-w-[260px]"><span className="font-bold text-gray-800 truncate block group-hover:text-indigo-600">{d.title}</span></td>
-                      <td className="px-4 py-3"><span className="flex items-center gap-2"><span className="w-6 h-6 rounded-md text-[9px] font-extrabold text-white flex items-center justify-center shrink-0" style={{ background: 'hsl(' + b.hue + ' 70% 50%)' }}>{b.letter}</span><span className="font-semibold text-gray-600 whitespace-nowrap">{b.name}</span></span></td>
-                      <td className="px-4 py-3"><span className="flex items-center gap-2"><Avatar nick={a.nick} hue={a.hue} size={24} /><span className="font-bold text-gray-700">{a.nick}</span><SocialIcon social={a.social} size={12} /></span></td>
-                      <td className="px-4 py-3"><Badge tone={d.type === 'Stories' ? 'violet' : d.type === 'Reels' ? 'sky' : d.type === 'Видео' ? 'red' : 'indigo'}>{d.type}</Badge></td>
-                      <td className="px-4 py-3 font-extrabold text-gray-900 tabular-nums whitespace-nowrap">{fmtMoney(d.budget)}</td>
-                      <td className="px-4 py-3"><Badge tone={STAGE_TONES[d.stage] ?? 'gray'} dot>{s.name}</Badge></td>
-                      <td className="px-4 py-3 font-semibold text-gray-500 tabular-nums whitespace-nowrap">{d.pubDate}</td>
-                      <td className="px-4 py-3"><Eye size={15} className="text-gray-300 group-hover:text-indigo-500 transition-colors" /></td>
-                    </tr>
-                  );
-                })}
-                {list.length === 0 && <tr><td colSpan={8} className="px-4 py-14 text-center font-semibold text-gray-400">Сделок по этим фильтрам нет</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-/* ================= КОММУНИКАЦИИ ================= */
-export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { deals: Deal[]; onOpenDeal?: (id: string) => void; initialAuthorId?: string | null; onNewDeal?: (authorId: string, meta?: { name?: string; handle?: string }) => void }) {
+export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { deals: Deal[]; onOpenDeal?: (id: string) => void; initialAuthorId?: string | null; onNewDeal?: (authorId: string, meta?: { name?: string; handle?: string }) => void }) {
   const toast = useToast();
   const [channels, setChannels] = useState<CommunicationChannelItem[]>([]);
+  const [channelsLoading, setChannelsLoading] = useState(true);
+  const [channelsError, setChannelsError] = useState<string | null>(null);
   const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
   const [activeChannelType, setActiveChannelType] = useState<string>('instagram');
   const [msgs, setMsgs] = useState<CommsMessage[]>([]);
@@ -191,11 +123,14 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  useEffect(() => {
+  const loadChannels = useCallback(() => {
     let cancelled = false;
+    setChannelsLoading(true);
+    setChannelsError(null);
     api.getCommunications()
       .then(items => {
         if (cancelled) return;
+        setChannelsLoading(false);
         if (initialAuthorId) {
           const target = items.find(c => String(c.author_id) === String(initialAuthorId));
           if (target) {
@@ -248,10 +183,15 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
         }
       })
       .catch(() => {
-        if (!cancelled) toast('err', 'Не удалось загрузить каналы');
+        if (cancelled) return;
+        setChannelsLoading(false);
+        setChannelsError('Не удалось загрузить каналы');
+        toast('err', 'Не удалось загрузить каналы');
       });
     return () => { cancelled = true; };
   }, [initialAuthorId]);
+
+  useEffect(() => loadChannels(), [loadChannels]);
 
   const uniqueChannels = useMemo(() => Array.from(new Map(channels.map(channel => [String(channel.author_id), channel])).values()), [channels]);
 
@@ -271,7 +211,7 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
   const a = ch ? channelAuthor(ch) : null;
   const targetDeal = ch ? deals.find(d => (d.authorId === String(ch.author_id) || d.id === String(ch.deal_id)) && d.stage >= 1 && d.stage <= 6) : undefined;
   const activeDeals = ch ? deals.filter(d => (d.authorId === String(ch.author_id) || d.id === String(ch.deal_id)) && d.stage >= 1 && d.stage <= 6) : [];
-  const activeBudget = activeDeals.reduce((a, d) => a + d.budget, 0);
+  const activeBudget = activeDeals.reduce((acc, d) => acc + d.budget, 0);
 
   const chatRef = useRef<HTMLDivElement>(null);
 
@@ -400,13 +340,22 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
       .catch(() => toast('err', 'Не удалось восстановить чат'));
   };
 
+  const retryMessages = () => {
+    if (!ch) return;
+    setMessagesError(null);
+    setMessagesLoading(true);
+    api.getCreatorMessages(String(ch.author_id), activeChannelType)
+      .then(items => { setMsgs(items.map(toDealMsg)); setMessagesLoading(false); })
+      .catch(() => { setMessagesLoading(false); setMessagesError('Не удалось загрузить сообщения'); });
+  };
+
   return (
     <div className="h-full flex">
-      <aside className="w-[320px] shrink-0 border-r border-gray-200 bg-white flex flex-col">
-        <div className="px-4 pt-4 pb-3 flex items-center justify-between gap-2 shrink-0">
+      <aside className="w-[320px] shrink-0 border-r border-line bg-white flex flex-col">
+        <div className="px-4 pt-5 pb-3 flex items-center justify-between gap-2 shrink-0">
           <div className="min-w-0 flex-1">
-            <h1 className="text-[17px] font-display font-bold text-gray-900 leading-tight truncate">Коммуникации</h1>
-            <p className="text-[11.5px] font-medium text-gray-400 mt-0.5 truncate">Чаты сделок · {activeCount} активных</p>
+            <h1 className="text-[17px] font-collab font-semibold text-ink leading-tight truncate">Коммуникации</h1>
+            <p className="text-[12px] font-medium text-muted mt-0.5 truncate">Чаты сделок · {activeCount} активных</p>
           </div>
           <Btn size="sm" onClick={() => setNewChatOpen(true)} className="!h-8 !px-2.5 !text-[12px] shrink-0 font-semibold whitespace-nowrap">
             <Plus size={13} className="shrink-0" />Новый чат
@@ -414,11 +363,11 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
         </div>
         <div className="px-3 pb-2 flex items-center gap-1">
           <button onClick={() => setChatTab('active')}
-            className={'flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-[12.5px] font-semibold transition-colors ' + (chatTab === 'active' ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-slate-50')}>
+            className={'flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-[12.5px] font-semibold transition-colors ' + (chatTab === 'active' ? 'bg-brand-50 text-brand-600' : 'text-gray-500 hover:bg-slate-50')}>
             Активные ({activeCount})
           </button>
           <button onClick={() => setChatTab('archived')}
-            className={'flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-[12.5px] font-semibold transition-colors ' + (chatTab === 'archived' ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-slate-50')}>
+            className={'flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-[12.5px] font-semibold transition-colors ' + (chatTab === 'archived' ? 'bg-brand-50 text-brand-600' : 'text-gray-500 hover:bg-slate-50')}>
             Архив ({archivedCount})
           </button>
         </div>
@@ -428,40 +377,51 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
             <input className={inputCls + ' !h-8.5 !pl-8 !text-[12.5px]'} placeholder="Поиск чата…" value={q} onChange={e => setQ(e.target.value)} />
           </div>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto scroll-thin px-2 flex flex-col gap-0.5">
-          {filtered.map(c => {
+        <div className="flex-1 min-h-0 overflow-y-auto scroll-thin px-2 pb-2 flex flex-col gap-0.5">
+          {channelsLoading && <div className="px-2 py-2"><SkeletonLines rows={7} /></div>}
+          {!channelsLoading && channelsError && (
+            <div className="py-6">
+              <ErrorState message={channelsError} onRetry={loadChannels} />
+            </div>
+          )}
+          {!channelsLoading && !channelsError && filtered.map(c => {
             const ca = channelAuthor(c);
+            const isSelected = selectedAuthorId === String(c.author_id);
             return (
-              <button key={String(c.author_id)} onClick={() => setSelectedAuthorId(String(c.author_id))}
-                className={'flex items-center gap-2.5 py-2.5 rounded-xl text-left transition-colors ' + (selectedAuthorId === String(c.author_id) ? 'bg-indigo-50' : 'hover:bg-slate-50')}>
+              <button key={String(c.author_id)} onClick={() => setSelectedAuthorId(String(c.author_id))} aria-current={isSelected}
+                className={'flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-left transition-colors ' + (isSelected ? 'bg-brand-50' : 'hover:bg-slate-50')}>
                 <Avatar nick={ca.nick} hue={ca.hue} size={36} />
                 <span className="min-w-0 flex-1">
-                    <span className={'flex items-center justify-between ' + (selectedAuthorId === String(c.author_id) ? 'text-indigo-700' : 'text-gray-800')}>
-                    <span className="text-[13px] font-bold truncate">{ca.nick}</span>
-                    <span className="text-[10px] font-bold text-gray-300 shrink-0">{formatMessageTime(c.last_message_time)}</span>
+                  <span className="flex items-center justify-between gap-2">
+                    <span className={'text-[13px] font-bold truncate ' + (isSelected ? 'text-brand-700' : 'text-gray-800')}>{ca.nick}</span>
+                    <span className="text-[10.5px] font-bold text-gray-400 shrink-0">{formatMessageTime(c.last_message_time)}</span>
                   </span>
                   <span className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-gray-500 shrink-0">{formatChannelName(c.channel_type)}</span>
-                    <span className="text-[11.5px] font-medium text-gray-400 truncate">{c.last_message}</span>
+                    <span className="text-[12px] font-medium text-muted truncate">{c.last_message}</span>
                   </span>
                 </span>
-                {c.unread_count > 0 && <span className="w-5 h-5 rounded-full bg-indigo-500 text-white text-[10px] font-extrabold flex items-center justify-center shrink-0">{c.unread_count}</span>}
+                {c.unread_count > 0 && <span className="w-5 h-5 rounded-full bg-brand-500 text-white text-[10.5px] font-extrabold flex items-center justify-center shrink-0">{c.unread_count}</span>}
               </button>
             );
           })}
-          {filtered.length === 0 && <div className="text-center text-[12.5px] font-semibold text-gray-400 py-10">{chatTab === 'active' ? 'Нет активных чатов' : 'Архив пуст'}</div>}
+          {!channelsLoading && !channelsError && filtered.length === 0 && (
+            <div className="py-6">
+              <Empty title={chatTab === 'active' ? 'Нет активных чатов' : 'Архив пуст'} text={chatTab === 'active' ? 'Начните новый диалог с автором' : 'Архивные чаты появятся здесь'} />
+            </div>
+          )}
         </div>
       </aside>
-      <div className="flex-1 min-w-0 flex flex-col bg-slate-50/60">
-        <div className="px-5 py-3.5 bg-white border-b border-gray-200 flex items-center gap-3 shrink-0">
+      <div className="flex-1 min-w-0 flex flex-col bg-page">
+        <div className="px-5 py-3 bg-white border-b border-line flex items-center gap-3 shrink-0">
           <Avatar nick={a?.nick ?? ''} hue={a?.hue ?? 0} size={36} />
           <div className="min-w-0">
-            <div className="flex items-center gap-2"><span className="text-[14px] font-bold text-gray-900 truncate">{a?.nick ?? ''}</span>{a && <SocialIcon social={a.social} size={13} />}</div>
-            {Boolean(ch?.deal_title) && <div className="text-[11px] font-semibold text-gray-400 truncate">Сделка: {ch?.deal_title}</div>}
+            <div className="flex items-center gap-2"><span className="text-[14px] font-bold text-ink truncate">{a?.nick ?? ''}</span>{a && <SocialIcon social={a.social} size={13} />}</div>
+            {Boolean(ch?.deal_title) && <div className="text-[11.5px] font-semibold text-muted truncate">Сделка: {ch?.deal_title}</div>}
             <div className="flex items-center gap-1.5 mt-0.5">
               {ch && <div ref={channelMenuRef} className="relative">
                 <button type="button" aria-expanded={channelMenuOpen} onClick={() => setChannelMenuOpen(open => !open)}
-                  className={'rounded-lg border px-2.5 py-1 text-[12px] font-semibold flex items-center gap-1.5 transition-colors ' + (channelToneClasses[activeChannelType.toLowerCase()] || 'border-gray-200 bg-gray-50 text-gray-700')}>
+                  className={'rounded-lg border px-2.5 py-1 text-[12px] font-semibold flex items-center gap-1.5 transition-colors ' + (channelToneClasses[activeChannelType.toLowerCase()] || 'border-line bg-gray-50 text-gray-700')}>
                   {formatChannelName(activeChannelType)}
                   {activeChannelType.toLowerCase() === 'telegram' && <span className="rounded-md border border-emerald-200/80 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Рекомендуется</span>}
                   <ChevronDown size={13} className={'transition-transform ' + (channelMenuOpen ? 'rotate-180' : '')} />
@@ -469,7 +429,7 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
                 {channelMenuOpen && (() => {
                   const available = (ch.available_channels ?? []).filter(option => option.channel_type && option.channel_type.toLowerCase() !== 'internal');
                   const options = Array.from(new Map((available.length ? available : [{ channel_type: 'instagram' }]).map(option => [option.channel_type.toLowerCase(), option])).values());
-                  return <div className="absolute top-full left-0 mt-1 z-30 min-w-[210px] bg-white rounded-xl shadow-lg border border-gray-150 py-1">
+                  return <div className="absolute top-full left-0 mt-1 z-30 min-w-[210px] bg-white rounded-xl shadow-lg border border-line py-1">
                     <div className="text-[10px] uppercase font-bold text-gray-400 px-3 py-1">Способ связи</div>
                     {options.map(option => <button key={option.channel_type} type="button" className="w-full flex items-center justify-between px-3 py-2 text-[12.5px] font-semibold text-left transition-colors hover:bg-slate-50"
                       onClick={() => {
@@ -479,7 +439,7 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
                       <span>{formatChannelName(option.channel_type)}</span>
                       <span className="flex items-center gap-2">
                         {option.channel_type.toLowerCase() === 'telegram' && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Рекомендуется</span>}
-                        {option.channel_type.toLowerCase() === activeChannelType.toLowerCase() && <Check size={14} className="text-indigo-600" />}
+                        {option.channel_type.toLowerCase() === activeChannelType.toLowerCase() && <Check size={14} className="text-brand-600" />}
                       </span>
                     </button>)}
                   </div>;
@@ -497,7 +457,7 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
           <div className="ml-auto flex items-center gap-2 shrink-0">
             {targetDeal ? (
               <>
-                <Btn variant="secondary" size="sm" onClick={() => onOpenDeal?.(String(targetDeal.id))}><Briefcase size={13} />К сделке</Btn>
+                <Btn variant="secondary" size="sm" onClick={() => onOpenDeal?.(String(targetDeal.id))}><Briefcase size={13} />Сделка</Btn>
                 {!ch?.is_archived ? (
                   <Tip label="В архив"><Btn variant="ghost" size="sm" onClick={() => { setCloseDeals(true); setConfirmArchive(true); }}><Archive size={14} /></Btn></Tip>
                 ) : (
@@ -519,8 +479,8 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
         </div>
         <div ref={chatRef} className="flex-1 min-h-0 overflow-y-auto scroll-thin p-5 flex flex-col gap-3">
           {messagesLoading && msgs.length === 0 && <div className="m-auto flex items-center gap-2 text-[12.5px] font-semibold text-gray-400"><Loader2 size={16} className="animate-spin" />Загрузка сообщений…</div>}
-          {messagesError && msgs.length === 0 && <button type="button" onClick={() => ch && api.getCreatorMessages(String(ch.author_id), activeChannelType).then(items => { setMsgs(items.map(toDealMsg)); setMessagesError(null); }).catch(() => setMessagesError('Не удалось загрузить сообщения'))} className="m-auto text-[12.5px] font-semibold text-rose-500">{messagesError} · Повторить</button>}
-          {!messagesLoading && !messagesError && !msgs.some(m => m.from === 'user' || m.from === 'author') && <div className="m-auto text-center text-[12.5px] font-semibold text-gray-400">{ch ? `Начните диалог — автор получит сообщение в ${formatChannelName(activeChannelType)}` : 'Начните диалог'}</div>}
+          {messagesError && msgs.length === 0 && <div className="m-auto"><ErrorState message={messagesError} onRetry={retryMessages} /></div>}
+          {!messagesLoading && !messagesError && !msgs.some(m => m.from === 'user' || m.from === 'author') && <div className="m-auto text-center text-[13px] font-semibold text-muted">{ch ? `Начните диалог — автор увидит сообщение в ${formatChannelName(activeChannelType)}` : 'Начните диалог'}</div>}
           {msgs.map(m => {
             if (m.from === 'system') {
               return (
@@ -531,9 +491,10 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
                 </div>
               );
             }
+            const isOut = m.from === 'user';
             return (
-              <div key={m.id} className={'flex ' + (m.from === 'user' ? 'justify-end' : 'justify-start')}>
-                <div className={'relative max-w-[60%] rounded-2xl px-3.5 py-2.5 text-[13px] font-medium leading-snug shadow-sm ' + (m.from === 'user' ? 'tail-r bg-indigo-500 text-white rounded-br-md' : 'tail-l bg-white border border-gray-200 text-gray-800 rounded-bl-md')}>
+              <div key={m.id} className={'flex ' + (isOut ? 'justify-end' : 'justify-start')}>
+                <div className={'relative max-w-[60%] rounded-2xl px-3.5 py-2.5 text-[13px] font-medium leading-snug shadow-sm ' + (isOut ? 'tail-r bg-brand-500 text-white rounded-br-md' : 'tail-l bg-white border border-line text-gray-800 rounded-bl-md')}>
                   {m.media_url && m.media_type === 'image' && (
                     <ChatImage src={resolveMediaUrl(m.media_url)} alt={m.media_name || undefined} />
                   )}
@@ -548,13 +509,13 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
                     </a>
                   )}
                   {m.text && <span className="block">{m.text}</span>}
-                  <span className={'block text-[10px] font-semibold mt-1 text-right ' + (m.from === 'user' ? 'text-indigo-200' : 'text-gray-300')}>{m.time} {m.from === 'user' && '✓✓'}</span>
+                  <span className={'block text-[10.5px] font-semibold mt-1 text-right ' + (isOut ? 'text-brand-200' : 'text-gray-400')}>{m.time} {isOut && '✓✓'}</span>
                 </div>
               </div>
             );
           })}
         </div>
-        <div className="p-3.5 border-t border-gray-200 bg-white shrink-0 flex items-end gap-2">
+        <div className="p-3.5 border-t border-line bg-white shrink-0 flex items-end gap-2">
           <input
             ref={fileInputRef}
             type="file"
@@ -563,29 +524,29 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
             onChange={handleFileSelect}
           />
           {attachedFile && (
-            <div className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[12px] font-medium text-indigo-700 shrink-0">
+            <div className="flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-2.5 py-1.5 text-[12px] font-medium text-brand-700 shrink-0">
               <FileText size={14} className="shrink-0" />
               <span className="max-w-[160px] truncate">{attachedFile.media_name}</span>
-              <span className="text-indigo-400 shrink-0">{formatFileSize(attachedFile.file_size)}</span>
-              <button onClick={() => setAttachedFile(null)} className="text-indigo-400 hover:text-indigo-700 shrink-0"><X size={13} /></button>
+              <span className="text-brand-400 shrink-0">{formatFileSize(attachedFile.file_size)}</span>
+              <button onClick={() => setAttachedFile(null)} className="text-brand-400 hover:text-brand-700 shrink-0"><X size={13} /></button>
             </div>
           )}
-          <button disabled={isUploading} className={'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ' + (isUploading ? 'text-indigo-500 cursor-default' : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600')} onClick={() => fileInputRef.current?.click()}>
+          <button disabled={isUploading} aria-label="Прикрепить файл" className={'w-9 h-9.5 rounded-lg flex items-center justify-center shrink-0 ' + (isUploading ? 'text-brand-500 cursor-default' : 'text-gray-400 hover:bg-gray-100 hover:text-brand-600')} onClick={() => fileInputRef.current?.click()}>
             {isUploading ? <Loader2 size={17} className="animate-spin" /> : <Paperclip size={17} />}
           </button>
           <textarea rows={1} value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
             placeholder={'Сообщение для ' + (a?.nick ?? '') + '…'}
-            className="flex-1 resize-none rounded-xl border border-gray-200 px-3.5 py-2.5 text-[13px] outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 transition-shadow" />
-          <Btn onClick={send} disabled={(!draft.trim() && !attachedFile) || isUploading} className="!rounded-xl !w-9 !h-9.5 !p-0 shrink-0"><Send size={15} /></Btn>
+            className="flex-1 resize-none rounded-xl border border-line px-3.5 py-2.5 text-[13px] leading-snug outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-100 transition-shadow" />
+          <Btn onClick={send} disabled={(!draft.trim() && !attachedFile) || isUploading} className="!rounded-xl !w-9.5 !h-9.5 !p-0 shrink-0"><Send size={15} /></Btn>
         </div>
       </div>
       {newChatOpen && <NewChatModal channels={channels} onClose={() => setNewChatOpen(false)} onStart={handleStartChat} />}
       {confirmArchive && ch && (
         <Modal onClose={() => setConfirmArchive(false)} w="max-w-sm">
-          <div className="px-5 py-4 border-b border-gray-200">
-            <h2 className="text-[16px] font-display font-semibold text-gray-900">Архивировать диалог?</h2>
+          <div className="px-5 py-4 border-b border-line">
+            <h2 className="text-[16px] font-collab font-semibold text-ink">Архивировать диалог?</h2>
           </div>
           {activeDeals.length === 0 ? (
             <div className="px-5 py-4 text-[13px] font-medium text-gray-600 leading-relaxed">
@@ -597,12 +558,12 @@ export function CommsList({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { d
                 У автора {activeDeals.length} {activeDeals.length % 10 === 1 && activeDeals.length % 100 !== 11 ? 'открытая сделка' : activeDeals.length % 10 >= 2 && activeDeals.length % 10 <= 4 && (activeDeals.length % 100 < 10 || activeDeals.length % 100 >= 20) ? 'открытые сделки' : 'открытых сделок'} на сумму {fmtMoney(activeBudget)}.
               </div>
               <label className="mt-3 flex items-center gap-2.5 cursor-pointer select-none">
-                <input type="checkbox" checked={closeDeals} onChange={e => setCloseDeals(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-200" />
+                <input type="checkbox" checked={closeDeals} onChange={e => setCloseDeals(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-200" />
                 <span className="text-[13px] font-medium text-gray-700">Перевести активные сделки в архив (сорваны)</span>
               </label>
             </div>
           )}
-          <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-end gap-2">
+          <div className="px-5 py-4 border-t border-line flex items-center justify-end gap-2">
             <Btn variant="secondary" size="sm" onClick={() => setConfirmArchive(false)}>Отмена</Btn>
             <Btn size="sm" onClick={handleArchiveConfirm}><Archive size={13} />В архив</Btn>
           </div>
@@ -637,19 +598,19 @@ function NewChatModal({ channels, onClose, onStart }: {
 
   return (
     <Modal onClose={onClose} w="max-w-xl">
-      <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-        <h2 className="text-[16px] font-display font-semibold text-gray-900">Новый чат</h2>
+      <div className="px-5 py-4 border-b border-line flex items-center justify-between">
+        <h2 className="text-[16px] font-collab font-semibold text-ink">Новый чат</h2>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
       </div>
-      <div className="px-5 py-3 border-b border-gray-200">
+      <div className="px-5 py-3 border-b border-line">
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" />
           <input className={inputCls + ' !pl-9'} placeholder="Поиск по нику или имени…" value={q} onChange={e => setQ(e.target.value)} />
         </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scroll-thin p-3 flex flex-col gap-1.5">
-        {loading && <div className="text-center text-[13px] font-semibold text-gray-400 py-10">Загрузка авторов…</div>}
-        {!loading && list.length === 0 && <div className="text-center text-[13px] font-semibold text-gray-400 py-10">Авторы не найдены</div>}
+        {loading && <div className="px-2 py-2"><SkeletonLines rows={5} /></div>}
+        {!loading && list.length === 0 && <Empty title="Авторы не найдены" text="Попробуйте изменить запрос" />}
         {list.map(creator => {
           const id = String(creator.accountid || creator.accountId || creator.id || creator.username || creator.handle || '');
           const contacts = [
@@ -663,20 +624,20 @@ function NewChatModal({ channels, onClose, onStart }: {
           const followers = Number(creator.followers ?? creator.subscribers_count ?? 0);
           const hue = hashHue(id);
           return (
-            <div key={id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:border-indigo-200 transition-colors">
+            <div key={id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:border-brand-200 transition-colors">
               <Avatar nick={nick} hue={hue} size={38} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-[13.5px] font-bold text-gray-900 truncate">{nick}</span>
+                  <span className="text-[13.5px] font-bold text-ink truncate">{nick}</span>
                   <SocialIcon social={social} size={13} />
                 </div>
-                <div className="text-[11.5px] font-semibold text-gray-400">{social} · {fmtBig(followers)} подписчиков</div>
+                <div className="text-[11.5px] font-semibold text-muted">{social} · {fmtBig(followers)} подписчиков</div>
               </div>
               <div className="flex flex-wrap justify-end gap-1">
                 {contacts.map(contact => {
                   const exists = channels.some(channel => String(channel.author_id) === id && channel.channel_type === contact.channel_type);
                   return <button key={contact.channel_type} type="button" onClick={() => onStart(id, contact.channel_type)}
-                    className="rounded-lg border border-gray-200 px-2 py-1 text-[10px] font-semibold text-gray-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700">
+                    className="rounded-lg border border-line px-2 py-1 text-[10px] font-semibold text-gray-600 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700">
                     {exists ? 'Открыть' : 'В'} {getChannelBadge(contact.channel_type).label.replace('Канал: ', '')}
                   </button>;
                 })}
@@ -689,8 +650,6 @@ function NewChatModal({ channels, onClose, onStart }: {
     </Modal>
   );
 }
-
-const selCls = inputCls + ' !w-44 !h-9.5 text-[12.5px] font-semibold';
 
 const fmtBig = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1).replace('.0', '').replace('.', ',')}M` : n.toLocaleString('ru-RU');
 

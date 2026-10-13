@@ -4,6 +4,31 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-display: "Unbounded", "Inter", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-collab: "Manrope", ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+  --color-brand-900: #1e1b4b;
+
+  --color-page: #f8fafc;
+  --color-ink: #111827;
+  --color-body: #1f2937;
+  --color-muted: #6b7280;
+  --color-faint: #9ca3af;
+  --color-line: #e5e7eb;
+  --color-line-soft: #eceef3;
+
+  --shadow-brand-sm: 0 8px 16px -6px rgba(99, 102, 241, .5);
+  --shadow-brand-card: 0 10px 30px -18px rgba(79, 70, 229, .2);
+  --shadow-brand-pop: 0 18px 40px -14px rgba(15, 23, 42, .3);
+  --shadow-brand-dark: 0 28px 60px -20px rgba(30, 27, 75, .45);
 }
 
 html, body, #root { height: 100%; }

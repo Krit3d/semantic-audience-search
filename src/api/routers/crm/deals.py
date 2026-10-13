@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from src.api.dependencies import get_crm_client, get_current_user, get_db
@@ -22,7 +23,7 @@ from src.api.services.crm_helpers import (
     resolve_target_for_channel,
 )
 from src.db.database import Database
-from src.db.models import Account, CreatorMessage, Deal, User
+from src.db.models import Account, CreatorMessage, Deal, EridRecord, User
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ def _deal_item(
     unread_count: int = 0,
     last_message: CreatorMessageItem | None = None,
     account: Account | None = None,
+    erid: str | None = None,
 ) -> DealItem:
     return DealItem(
         id=deal.id,
@@ -53,7 +55,19 @@ def _deal_item(
         author=author_summary(account if account is not None else deal.account),
         last_message=last_message,
         unread_count=unread_count,
+        erid=erid,
     )
+
+
+async def _deal_erid_code(session: AsyncSession, deal_id: int) -> str | None:
+    stmt = (
+        select(EridRecord.code)
+        .where(EridRecord.deal_id == deal_id)
+        .where(EridRecord.code.is_not(None))
+        .order_by(EridRecord.created_at.desc())
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
 
 
 @router.get("", response_model=list[DealItem])
@@ -141,8 +155,25 @@ async def list_deals(
                     media_name=row.media_name,
                     media_type=row.media_type,
                 )
+        erid_map: dict[int, str] = {}
+        if deal_ids:
+            erid_subq = (
+                select(
+                    EridRecord.deal_id,
+                    EridRecord.code,
+                    func.row_number()
+                    .over(partition_by=EridRecord.deal_id, order_by=EridRecord.created_at.desc())
+                    .label("rn"),
+                )
+                .where(EridRecord.deal_id.in_(deal_ids))
+                .where(EridRecord.code.is_not(None))
+                .subquery()
+            )
+            erid_rows = await session.execute(select(erid_subq).where(erid_subq.c.rn == 1))
+            for row in erid_rows.all():
+                erid_map[row.deal_id] = row.code
         return [
-            _deal_item(deal, unread_map.get(deal.id, 0), last_map.get(deal.id))
+            _deal_item(deal, unread_map.get(deal.id, 0), last_map.get(deal.id), erid=erid_map.get(deal.id))
             for deal in deals
         ]
 
@@ -232,6 +263,7 @@ async def get_deal(
             deal,
             unread_count,
             message_item(last_message) if last_message is not None else None,
+            erid=await _deal_erid_code(session, deal.id),
         )
 
 
@@ -279,6 +311,7 @@ async def update_deal(
             unread_count,
             message_item(last_message) if last_message is not None else None,
             account=account,
+            erid=await _deal_erid_code(session, deal.id),
         )
     return item
 

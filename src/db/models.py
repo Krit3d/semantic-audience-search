@@ -703,3 +703,229 @@ class Ticket(Base):
 
     def __repr__(self) -> str:
         return f"<Ticket(id={self.id}, ticket_number={self.ticket_number}, status={self.status})>"
+
+
+class Brand(Base):
+    __tablename__ = "brands"
+    __table_args__ = (
+        Index("ix_brands_user_name", "user_id", "name"),
+        CheckConstraint(
+            "status IN ('Активен', 'Черновик')",
+            name="ck_brands_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(
+        String(120),
+        default="Другое",
+        server_default="Другое",
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="Черновик",
+        server_default="Черновик",
+        nullable=False,
+    )
+    hue: Mapped[int] = mapped_column(
+        SmallInteger,
+        default=235,
+        server_default="235",
+        nullable=False,
+    )
+    desc: Mapped[str] = mapped_column(
+        Text,
+        default="",
+        server_default="",
+        nullable=False,
+    )
+    kb: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship()
+    erid_records: Mapped[list["EridRecord"]] = relationship(back_populates="brand")
+
+
+class EridRecord(Base):
+    __tablename__ = "erid_records"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('Заполняют данные', 'Активен', 'Ожидает публикации', 'Опубликован', 'Архивирован')",
+            name="ck_erid_records_status",
+        ),
+        CheckConstraint(
+            "verdict IS NULL OR verdict IN ('ok', 'bad')",
+            name="ck_erid_records_verdict",
+        ),
+        Index("ix_erid_records_user_status", "user_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    deal_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("deals.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    brand_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("brands.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    code: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="Заполняют данные",
+        server_default="Заполняют данные",
+        nullable=False,
+    )
+    pub_link: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    verdict: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship()
+    deal: Mapped["Deal | None"] = relationship(lazy="joined")
+    brand: Mapped["Brand | None"] = relationship(back_populates="erid_records", lazy="joined")
+    checks: Mapped[list["EridCheck"]] = relationship(
+        back_populates="record", cascade="all, delete-orphan", order_by="EridCheck.checked_at"
+    )
+
+
+class EridCheck(Base):
+    __tablename__ = "erid_checks"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    erid_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("erid_records.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+    result: Mapped[str] = mapped_column(String(500), nullable=False)
+    checked_by: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    record: Mapped["EridRecord"] = relationship(back_populates="checks")
+
+
+class Publication(Base):
+    __tablename__ = "publications"
+    __table_args__ = (
+        CheckConstraint(
+            "sync_status IN ('ok', 'syncing', 'waiting', 'error')",
+            name="ck_publications_sync_status",
+        ),
+        Index("ix_publications_user_published", "user_id", "published_at"),
+        Index("ix_publications_user_brand", "user_id", "brand_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    deal_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("deals.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    account_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    brand_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("brands.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    platform: Mapped[str] = mapped_column(String(30), nullable=False)
+    type: Mapped[str] = mapped_column(
+        String(50),
+        default="Пост",
+        server_default="Пост",
+        nullable=False,
+    )
+    text: Mapped[str] = mapped_column(
+        Text,
+        default="",
+        server_default="",
+        nullable=False,
+    )
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    views: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    clicks: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    revenue: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    cost: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    erid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sync_status: Mapped[str] = mapped_column(
+        String(20),
+        default="waiting",
+        server_default="waiting",
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship()
+    account: Mapped["Account"] = relationship(lazy="joined")
+    deal: Mapped["Deal | None"] = relationship(lazy="joined")
+    brand: Mapped["Brand | None"] = relationship(lazy="joined")

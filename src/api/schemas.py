@@ -199,6 +199,7 @@ class SearchRequest(BaseModel):
     location: str | None = Field(default="", description="Filter results by author location")
     min_followers: int | None = Field(default=None, description="Minimum follower count filter")
     max_followers: int | None = Field(default=None, description="Maximum follower count filter")
+    min_err: float | None = Field(default=None, description="Minimum average engagement rate (ERR) filter in percent")
     author_type: str = Field(default="expert", description="Author type filter: expert, business, or all")
     platform: str = Field(default="all", description="Platform filter: all, telegram, instagram, youtube, tiktok, threads")
     include_contacts: bool = Field(default=False, description="Include contact details in response")
@@ -231,6 +232,9 @@ class SearchRequest(BaseModel):
         max_followers = data.get("max_followers")
         if max_followers is None or max_followers == "" or (isinstance(max_followers, (int, float)) and max_followers <= 0):
             data["max_followers"] = None
+        min_err = data.get("min_err")
+        if min_err is None or min_err == "" or (isinstance(min_err, (int, float)) and min_err <= 0):
+            data["min_err"] = None
         languages = data.get("languages")
         if languages is None or languages == []:
             data["languages"] = None
@@ -426,6 +430,7 @@ class AuthorSearchResultItem(BaseModel):
     affinity_reason: str | None = Field(default=None, description="Contextual reason for affinity match")
     primary_tone: ToneType | None = Field(default=None, description="Primary tone from Neo4j graph")
     primary_hormone: HormoneType | None = Field(default=None, description="Primary hormone from Neo4j graph")
+    is_business: bool = Field(default=False, description="Whether the account belongs to a business rather than an individual author")
 
     @field_validator("platform", mode="before")
     @classmethod
@@ -477,6 +482,12 @@ class CrmRegisterRequest(BaseModel):
 class CrmLoginResponse(BaseModel):
     token: str = Field(description="Session token returned by Twenty CRM")
     user: dict[str, Any] = Field(description="Authenticated user record")
+
+class CrmUserResponse(BaseModel):
+    id: int = Field(description="User identifier")
+    email: str = Field(description="User email")
+    name: str = Field(description="Display name")
+    is_admin: bool = Field(description="Administrator flag")
 
 
 class CrmUpdateStatusRequest(BaseModel):
@@ -567,6 +578,7 @@ class DealItem(BaseModel):
     author: DealAuthorSummary | None = None
     last_message: CreatorMessageItem | None = None
     unread_count: int = 0
+    erid: str | None = None
 
 
 class DealCreateRequest(BaseModel):
@@ -817,3 +829,245 @@ class SupportTicketBulkRequest(BaseModel):
 
 class SupportTicketBulkResponse(BaseModel):
     affected: int = Field(description="Number of tickets processed")
+
+
+BRAND_STATUSES = ("Активен", "Черновик")
+ERID_STATUSES = ("Заполняют данные", "Активен", "Ожидает публикации", "Опубликован", "Архивирован")
+PUBLICATION_SYNC_STATUSES = ("ok", "syncing", "waiting", "error")
+
+
+class BrandProduct(BaseModel):
+    name: str = ""
+    desc: str = ""
+    tags: list[str] = Field(default_factory=list)
+    hue: int = 235
+
+
+class BrandPayType(BaseModel):
+    label: str = ""
+    on: bool = False
+    rate: str = ""
+    def_: bool | None = Field(default=None, alias="def")
+    custom: bool | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class BrandRequisites(BaseModel):
+    company: str | None = None
+    inn: str | None = None
+    kpp: str | None = None
+    ogrn: str | None = None
+    address: str | None = None
+    contact: str | None = None
+    email: str | None = None
+    phone: str | None = None
+
+
+class BrandKb(BaseModel):
+    short: str = ""
+    products: list[BrandProduct] = Field(default_factory=list)
+    usp: list[str] = Field(default_factory=list)
+    allowed: list[str] = Field(default_factory=list)
+    forbidden: list[str] = Field(default_factory=list)
+    mentions: list[str] = Field(default_factory=list)
+    pay_types: list[BrandPayType] = Field(default_factory=list)
+    requisites: BrandRequisites = Field(default_factory=BrandRequisites)
+
+
+class BrandItem(BaseModel):
+    id: int
+    name: str
+    category: str
+    status: str
+    hue: int
+    desc: str
+    deals_count: int = 0
+    shortlist_count: int = 0
+    kb: BrandKb = Field(default_factory=BrandKb)
+    created_at: datetime
+    updated_at: datetime
+
+
+class BrandCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    category: str = Field(default="Другое", max_length=120)
+    status: str = "Черновик"
+    hue: int = Field(default=235, ge=0, le=360)
+    desc: str = ""
+    kb: BrandKb | None = None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        if value not in BRAND_STATUSES:
+            raise ValueError("Недопустимый статус бренда")
+        return value
+
+
+class BrandUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    category: str | None = Field(default=None, max_length=120)
+    status: str | None = None
+    hue: int | None = Field(default=None, ge=0, le=360)
+    desc: str | None = None
+    kb: BrandKb | None = None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str | None) -> str | None:
+        if value is not None and value not in BRAND_STATUSES:
+            raise ValueError("Недопустимый статус бренда")
+        return value
+
+
+class EridCheckItem(BaseModel):
+    id: int
+    checked_at: datetime
+    result: str
+    checked_by: str
+
+
+class EridRecordItem(BaseModel):
+    id: int
+    code: str | None
+    deal_id: int | None
+    deal_title: str | None
+    author_handle: str | None
+    brand_id: int | None
+    brand_name: str | None
+    status: str
+    pub_link: str | None
+    verdict: str | None
+    created_at: datetime
+    checks: list[EridCheckItem] = Field(default_factory=list)
+
+
+class EridCreateRequest(BaseModel):
+    deal_id: int | None = None
+    brand_id: int | None = None
+    code: str | None = Field(default=None, max_length=64)
+
+
+class EridUpdateRequest(BaseModel):
+    status: str | None = None
+    pub_link: str | None = Field(default=None, max_length=1024)
+    verdict: str | None = None
+    code: str | None = Field(default=None, max_length=64)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str | None) -> str | None:
+        if value is not None and value not in ERID_STATUSES:
+            raise ValueError("Недопустимый статус маркировки")
+        return value
+
+    @field_validator("verdict")
+    @classmethod
+    def validate_verdict(cls, value: str | None) -> str | None:
+        if value is not None and value not in ("ok", "bad"):
+            raise ValueError("Недопустимое значение verdict")
+        return value
+
+
+class EridCheckCreateRequest(BaseModel):
+    result: str = Field(min_length=1, max_length=500)
+
+
+class PublicationItem(BaseModel):
+    id: int
+    deal_id: int | None
+    author_id: str
+    author_handle: str | None
+    brand_id: int | None
+    brand_name: str | None
+    platform: str
+    type: str
+    text: str
+    published_at: datetime
+    url: str | None
+    views: int
+    clicks: int
+    revenue: int
+    cost: int
+    erid: str | None
+    sync_status: str
+
+
+class AnalyticsFunnelStep(BaseModel):
+    stage: int
+    label: str
+    count: int
+
+
+class AnalyticsRevenuePoint(BaseModel):
+    period: str
+    revenue: float
+
+
+class AnalyticsTopAuthor(BaseModel):
+    author_id: str
+    handle: str
+    revenue: int
+
+
+class AnalyticsNetwork(BaseModel):
+    platform: str
+    share: int
+
+
+class AnalyticsTotals(BaseModel):
+    revenue: int
+    deals: int
+    publications: int
+    avg_roas: float | None
+
+
+class AnalyticsSummary(BaseModel):
+    period: str
+    funnel: list[AnalyticsFunnelStep] = Field(default_factory=list)
+    revenue: list[AnalyticsRevenuePoint] = Field(default_factory=list)
+    top_authors: list[AnalyticsTopAuthor] = Field(default_factory=list)
+    networks: list[AnalyticsNetwork] = Field(default_factory=list)
+    totals: AnalyticsTotals
+
+
+class ShortlistItem(BaseModel):
+    account_id: str
+    added_at: datetime
+    author: DealAuthorSummary | None
+
+
+class SimilarSearchRequest(BaseModel):
+    account_ids: list[str] = Field(min_length=1, max_length=50)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class CreatorImportPreviewItem(BaseModel):
+    row: int
+    username: str | None
+    platform: str | None
+    status: str
+    reason: str | None
+
+
+class CreatorImportPreview(BaseModel):
+    items: list[CreatorImportPreviewItem] = Field(default_factory=list)
+    total: int = 0
+    new_count: int = 0
+    exists_count: int = 0
+    skip_count: int = 0
+
+
+class CreatorImportCommitItem(BaseModel):
+    username: str = Field(min_length=1, max_length=255)
+    platform: str = Field(min_length=1, max_length=30)
+
+
+class CreatorImportCommitRequest(BaseModel):
+    items: list[CreatorImportCommitItem] = Field(min_length=1, max_length=500)
+
+
+class CreatorImportResult(BaseModel):
+    added_count: int
+    skipped_count: int

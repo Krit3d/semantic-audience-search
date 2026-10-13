@@ -3,12 +3,16 @@ import logging
 from datetime import datetime, timezone
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.api.dependencies import get_crm_client, get_current_user, get_db
 from src.api.schemas import (
+    CreatorImportCommitRequest,
+    CreatorImportPreview,
+    CreatorImportPreviewItem,
+    CreatorImportResult,
     CreatorMessageItem,
     CreatorProfileDetail,
     CreatorSendMessageRequest,
@@ -16,11 +20,13 @@ from src.api.schemas import (
     CrmShortlistRequest,
     CrmShortlistResponse,
     CrmUpdateStatusRequest,
+    ShortlistItem,
 )
 from src.api.services.contact_resolver import ContactResolver
 from src.api.services.crm_client import TwentyCrmClient
 from src.api.services.crm_helpers import (
     STATUS_CRM_TO_UI,
+    author_summary,
     STATUS_UI_TO_CRM,
     build_creator_payload,
     deduplicate_accounts,
@@ -700,3 +706,246 @@ async def send_creator_message(
         await session.commit()
         await session.refresh(message)
         return message_item(message)
+
+
+@router.get("/shortlist", response_model=list[ShortlistItem])
+async def list_shortlist(
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> list[ShortlistItem]:
+    async with db.async_session() as session:
+        stmt = (
+            select(UserShortlist)
+            .where(UserShortlist.user_id == current_user.id)
+            .order_by(UserShortlist.created_at.desc())
+        )
+        entries = list((await session.execute(stmt)).scalars().all())
+        return [
+            ShortlistItem(
+                account_id=str(entry.account_id),
+                added_at=entry.created_at,
+                author=author_summary(entry.account),
+            )
+            for entry in entries
+        ]
+
+
+@router.delete("/shortlist/{account_id}")
+async def remove_from_shortlist(
+    account_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> dict[str, str]:
+    async with db.async_session() as session:
+        try:
+            numeric_id = int(account_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Некорректный идентификатор автора")
+        stmt = delete(UserShortlist).where(
+            and_(
+                UserShortlist.user_id == current_user.id,
+                UserShortlist.account_id == numeric_id,
+            )
+        )
+        result = await session.execute(stmt)
+        await session.commit()
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Автор не найден в шорт-листе")
+        return {"status": "deleted", "account_id": account_id}
+
+
+PLATFORM_ALIASES: dict[str, str] = {
+    "instagram": "INSTAGRAM", "insta": "INSTAGRAM", "ig": "INSTAGRAM",
+    "telegram": "TELEGRAM", "tg": "TELEGRAM",
+    "youtube": "YOUTUBE", "yt": "YOUTUBE",
+    "tiktok": "TIKTOK", "tt": "TIKTOK",
+    "vk": "VK", "vkontakte": "VK", "вконтакте": "VK",
+}
+
+
+def _parse_import_rows(filename: str, content: bytes) -> list[tuple[int, str, str]]:
+    name = filename.lower()
+    rows: list[tuple[int, str, str]] = []
+    if name.endswith(".xlsx"):
+        try:
+            import openpyxl
+        except ImportError:
+            raise HTTPException(status_code=400, detail="Формат .xlsx временно не поддерживается, используйте .csv")
+        import io as _io
+        try:
+            wb = openpyxl.load_workbook(_io.BytesIO(content), read_only=True, data_only=True)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Не удалось прочитать файл .xlsx")
+        sheet = wb.active
+        if sheet is None:
+            return []
+        for idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+            cells = [str(c).strip() if c is not None else "" for c in row]
+            joined = [c for c in cells if c]
+            if not joined:
+                continue
+            rows.append((idx, joined[0], joined[1] if len(joined) > 1 else ""))
+        wb.close()
+        return rows
+    import csv
+    import io as _io
+    text = content.decode("utf-8-sig", errors="replace")
+    sample = text[:2048]
+    delimiter = ";" if sample.count(";") > sample.count(",") else ","
+    reader = csv.reader(_io.StringIO(text), delimiter=delimiter)
+    for idx, row in enumerate(reader, start=1):
+        cells = [c.strip() for c in row if c and c.strip()]
+        if not cells:
+            continue
+        rows.append((idx, cells[0], cells[1] if len(cells) > 1 else ""))
+    return rows
+
+
+def _extract_username(raw: str) -> str | None:
+    value = raw.strip()
+    if not value:
+        return None
+    value = value.split("?")[0].rstrip("/")
+    for prefix in ("https://", "http://", "www."):
+        if value.lower().startswith(prefix):
+            value = value[len(prefix):]
+    if "/" in value:
+        parts = [p for p in value.split("/") if p]
+        if not parts:
+            return None
+        value = parts[-1]
+    value = value.lstrip("@").strip()
+    if not value or " " in value or len(value) > 100:
+        return None
+    lowered = value.lower()
+    if lowered in {"username", "ник", "никнейм", "handle", "login", "ссылка", "link", "url", "профиль", "автор"}:
+        return None
+    return value
+
+
+def _extract_platform(raw: str, username_raw: str) -> str | None:
+    source = f"{raw} {username_raw}".lower()
+    if source.strip() == "":
+        return None
+    for alias, platform in PLATFORM_ALIASES.items():
+        if alias in source.split() or f"{alias} " in source or source.strip() == alias:
+            return platform
+    if "t.me" in source or "telegram" in source:
+        return "TELEGRAM"
+    if "instagram.com" in source:
+        return "INSTAGRAM"
+    if "youtube.com" in source or "youtu.be" in source:
+        return "YOUTUBE"
+    if "tiktok.com" in source:
+        return "TIKTOK"
+    if "vk.com" in source:
+        return "VK"
+    return None
+
+
+@router.post("/creators/import/preview", response_model=CreatorImportPreview)
+async def preview_creators_import(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> CreatorImportPreview:
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл слишком большой: максимум 5 МБ")
+    rows = _parse_import_rows(file.filename or "import.csv", content)
+    if len(rows) > 500:
+        raise HTTPException(status_code=400, detail="Слишком много строк: максимум 500")
+    parsed: list[tuple[int, str, str | None]] = []
+    seen: set[str] = set()
+    items: list[CreatorImportPreviewItem] = []
+    for row_no, username_raw, platform_raw in rows:
+        username = _extract_username(username_raw)
+        if username is None:
+            items.append(CreatorImportPreviewItem(row=row_no, username=None, platform=None, status="skip", reason="нет ссылки"))
+            continue
+        key = username.lower()
+        if key in seen:
+            items.append(CreatorImportPreviewItem(row=row_no, username=username, platform=None, status="skip", reason="дубликат"))
+            continue
+        seen.add(key)
+        parsed.append((row_no, username, _extract_platform(platform_raw, username_raw)))
+    async with db.async_session() as session:
+        usernames = [u for _, u, _ in parsed]
+        existing: dict[str, Account] = {}
+        if usernames:
+            lowered = [u.lower() for u in usernames]
+            stmt = select(Account).where(
+                or_(
+                    func.lower(Account.username).in_(lowered),
+                    func.lower(Account.username).in_([f"@{u}" for u in lowered]),
+                )
+            )
+            accounts = list((await session.execute(stmt)).scalars().all())
+            for account in accounts:
+                raw = (account.username or "").lstrip("@").lower()
+                if raw:
+                    existing[raw] = account
+        short_stmt = select(UserShortlist.account_id).where(UserShortlist.user_id == current_user.id)
+        shortlisted = {row[0] for row in (await session.execute(short_stmt)).all()}
+        for row_no, username, platform in parsed:
+            account = existing.get(username.lower())
+            if account is not None and account.id in shortlisted:
+                items.append(CreatorImportPreviewItem(row=row_no, username=username, platform=platform, status="exists", reason="уже в базе"))
+            elif account is not None:
+                items.append(CreatorImportPreviewItem(row=row_no, username=username, platform=platform or account.platform, status="new", reason=None))
+            else:
+                items.append(CreatorImportPreviewItem(row=row_no, username=username, platform=platform, status="skip", reason="не найден в базе Collabrama"))
+    items.sort(key=lambda item: item.row)
+    return CreatorImportPreview(
+        items=items,
+        total=len(items),
+        new_count=sum(1 for i in items if i.status == "new"),
+        exists_count=sum(1 for i in items if i.status == "exists"),
+        skip_count=sum(1 for i in items if i.status == "skip"),
+    )
+
+
+@router.post("/creators/import/commit", response_model=CreatorImportResult)
+async def commit_creators_import(
+    payload: CreatorImportCommitRequest,
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    crm_client: TwentyCrmClient = Depends(get_crm_client),
+) -> CreatorImportResult:
+    usernames = list(dict.fromkeys(i.username.strip().lstrip("@").lower() for i in payload.items if i.username.strip()))
+    if not usernames:
+        return CreatorImportResult(added_count=0, skipped_count=0)
+    async with db.async_session() as session:
+        stmt = select(Account).where(
+            or_(
+                func.lower(Account.username).in_(usernames),
+                func.lower(Account.username).in_([f"@{u}" for u in usernames]),
+            )
+        )
+        accounts = deduplicate_accounts(list((await session.execute(stmt)).scalars().all()))
+        skipped = len(usernames) - len(accounts)
+        if accounts:
+            now = datetime.now(timezone.utc)
+            rows = [
+                {
+                    "user_id": current_user.id,
+                    "account_id": account.id,
+                    "status": "Свободен",
+                    "source": "manual",
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                for account in accounts
+            ]
+            await session.execute(
+                pg_insert(UserShortlist)
+                .values(rows)
+                .on_conflict_do_nothing(index_elements=["user_id", "account_id"])
+            )
+            await session.commit()
+    tasks = [crm_client.upsert_creator(build_creator_payload(account, current_user.email)) for account in accounts]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for account, res in zip(accounts, results):
+        if isinstance(res, Exception):
+            logger.error("Import upsert error for %s: %s", account.id, repr(res))
+    return CreatorImportResult(added_count=len(accounts), skipped_count=max(skipped, 0))

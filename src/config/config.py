@@ -284,6 +284,26 @@ class Settings(BaseSettings):
         default=24,
         description="Hours before a failed creator account can be re-processed",
     )
+    discovery_query_miss_threshold: int = Field(
+        default=5,
+        description="Consecutive discovery runs with no new pending accounts before a query is marked exhausted",
+    )
+    discovery_query_cooldown_days: int = Field(
+        default=7,
+        description="Days an exhausted discovery query is skipped before it becomes eligible again",
+    )
+    discovery_reels_max_profile_fetches: int = Field(
+        default=20,
+        description="Maximum number of unique author profile fetches per reels search discovery query",
+    )
+    discovery_backoff_initial_s: int = Field(
+        default=600,
+        description="Initial sleep interval in seconds when the discovery query pool is fully exhausted",
+    )
+    discovery_backoff_max_s: int = Field(
+        default=3600,
+        description="Maximum sleep interval in seconds for discovery backoff",
+    )
     max_post_age_days: int = Field(
         default=15,
         description="Maximum age of a post in days to be eligible for video transcription",

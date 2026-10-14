@@ -445,12 +445,19 @@ class InstagramParser(BasePlatformParser):
             new_count = 0
             existing_count = 0
             filtered_count = 0
+            filtered_cyrillic = 0
 
             async with self.session_maker() as session:
                 for profile in profiles:
                     username = profile.get("username") or profile.get("handle")
                     if not username or not isinstance(username, str):
                         filtered_count += 1
+                        continue
+
+                    full_name = profile.get("full_name", "")
+                    biography = profile.get("biography", "") or ""
+                    if not check_cyrillic_stage1(biography, full_name):
+                        filtered_cyrillic += 1
                         continue
 
                     followers_raw = profile.get("follower_count")
@@ -477,8 +484,6 @@ class InstagramParser(BasePlatformParser):
                     valid_count += 1
 
                     profile_id = profile.get("id")
-                    full_name = profile.get("full_name", "")
-                    biography = profile.get("biography", "") or ""
 
                     exists_stmt = select(Account.id).where(
                         Account.platform == "INSTAGRAM",
@@ -532,7 +537,7 @@ class InstagramParser(BasePlatformParser):
                 await session.commit()
 
             logger.info(
-                "Discovery stats for query='%s' (category='%s'): raw=%d | valid=%d | new=%d | existing=%d | filtered=%d",
+                "Discovery stats for query='%s' (category='%s', source='profiles_search'): raw=%d | valid=%d | new=%d | existing=%d | filtered=%d | filtered_cyrillic=%d",
                 query,
                 category,
                 raw_count,
@@ -540,8 +545,9 @@ class InstagramParser(BasePlatformParser):
                 new_count,
                 existing_count,
                 filtered_count,
+                filtered_cyrillic,
             )
-            return valid_count
+            return new_count
 
         except Exception as e:
             logger.error(
@@ -551,6 +557,238 @@ class InstagramParser(BasePlatformParser):
                 exc_info=True,
             )
             return 0
+
+    def _resolve_subscribers(self, profile: dict[str, Any]) -> int:
+        subscribers = extract_instagram_subscribers(profile)
+
+        if not subscribers:
+            edge_followed_by = profile.get("edge_followed_by")
+            if isinstance(edge_followed_by, dict):
+                fallback_val = edge_followed_by.get("count")
+                if fallback_val is not None:
+                    try:
+                        subscribers = int(fallback_val)
+                    except (ValueError, TypeError):
+                        pass
+
+        if not subscribers:
+            for key in ("follower_count", "followers", "followers_count"):
+                raw_val = profile.get(key)
+                if raw_val is not None:
+                    try:
+                        subscribers = int(raw_val)
+                    except (ValueError, TypeError):
+                        continue
+                    if subscribers:
+                        break
+
+        return subscribers or 0
+
+    async def discover_candidates_via_reels(self, query: str, category: str) -> int:
+        logger.info(
+            "Starting Instagram reels-based candidate discovery for query: '%s', category: '%s'",
+            query,
+            category,
+        )
+
+        try:
+            response = await self.client.get(
+                endpoint="/v2/instagram/reels/search",
+                params={"query": query},
+            )
+        except Exception as e:
+            logger.error(
+                "Instagram reels search failed for query='%s': %s",
+                query,
+                e,
+                exc_info=True,
+            )
+            return 0
+
+        reels: list[dict[str, Any]] = []
+        if isinstance(response, dict):
+            for key in ("reels", "items", "data"):
+                value = response.get(key)
+                if isinstance(value, list):
+                    reels = [item for item in value if isinstance(item, dict)]
+                    break
+
+        if not reels:
+            logger.info(
+                "Instagram reels search for query='%s' returned 0 reels",
+                query,
+            )
+            return 0
+
+        owners: dict[str, dict[str, Any]] = {}
+        for reel in reels:
+            owner = reel.get("owner")
+            if not isinstance(owner, dict):
+                continue
+            username = owner.get("username")
+            if not username or not isinstance(username, str):
+                continue
+            owners.setdefault(username.lower(), {"username": username, "reel": reel})
+
+        unique_usernames = list(owners.keys())
+        if not unique_usernames:
+            logger.info(
+                "Instagram reels search for query='%s' returned %d reels with no extractable authors",
+                query,
+                len(reels),
+            )
+            return 0
+
+        max_fetches = self.settings.discovery_reels_max_profile_fetches
+
+        fetched_count = 0
+        new_count = 0
+        existing_count = 0
+        filtered_followers = 0
+        filtered_cyrillic = 0
+        fetch_failed = 0
+        valid_count = 0
+
+        async with self.session_maker() as known_session:
+            known_stmt = select(func.lower(Account.username)).where(
+                Account.platform == "INSTAGRAM",
+                func.lower(Account.username).in_(unique_usernames),
+            )
+            known_result = await known_session.execute(known_stmt)
+            known_lower: set[str] = set(known_result.scalars().all())
+
+            known_pid_stmt = select(func.lower(Account.platform_id)).where(
+                Account.platform == "INSTAGRAM",
+                func.lower(Account.platform_id).in_(unique_usernames),
+            )
+            known_pid_result = await known_session.execute(known_pid_stmt)
+            known_lower |= set(known_pid_result.scalars().all())
+
+        candidates: list[dict[str, Any]] = []
+
+        for lower_name in unique_usernames:
+            if lower_name in known_lower:
+                existing_count += 1
+                continue
+            if fetched_count >= max_fetches:
+                break
+            fetched_count += 1
+            username = owners[lower_name]["username"]
+            reel = owners[lower_name]["reel"]
+
+            try:
+                profile = await fetch_instagram_profile(self.client, username)
+            except Exception as e:
+                fetch_failed += 1
+                logger.warning(
+                    "Reels discovery: failed to fetch profile %s for query='%s': %s",
+                    username,
+                    query,
+                    e,
+                )
+                continue
+
+            if not profile:
+                fetch_failed += 1
+                continue
+
+            subscribers = self._resolve_subscribers(profile)
+            if not validate_follower_count(subscribers):
+                filtered_followers += 1
+                continue
+
+            biography = profile.get("biography") or ""
+            full_name = profile.get("full_name", "")
+            if not check_cyrillic_stage1(biography, full_name):
+                filtered_cyrillic += 1
+                continue
+
+            valid_count += 1
+            candidates.append(
+                {
+                    "username": profile.get("username") or username,
+                    "profile_id": profile.get("id"),
+                    "full_name": full_name,
+                    "biography": biography,
+                    "subscribers": subscribers,
+                    "reel": reel,
+                }
+            )
+
+        if candidates:
+            async with self.session_maker() as session:
+                for candidate in candidates:
+                    profile_username = candidate["username"]
+                    profile_id = candidate["profile_id"]
+
+                    exists_stmt = select(Account.id).where(
+                        Account.platform == "INSTAGRAM",
+                        or_(
+                            Account.platform_id == str(profile_id or profile_username),
+                            func.lower(Account.username) == profile_username.lower(),
+                        ),
+                    )
+                    exists_result = await session.execute(exists_stmt)
+                    already_exists = exists_result.scalar_one_or_none() is not None
+                    if already_exists:
+                        existing_count += 1
+                        continue
+
+                    try:
+                        account_id = await upsert_and_deduplicate_account(
+                            session=session,
+                            platform="INSTAGRAM",
+                            platform_id=str(profile_id or profile_username),
+                            username=profile_username,
+                            title=candidate["full_name"] or profile_username,
+                            description=candidate["biography"],
+                            subscribers_count=candidate["subscribers"],
+                            status="pending",
+                        )
+
+                        meta: dict[str, Any] = {
+                            "discovery_query": query,
+                            "source": "reels_search",
+                            "search_metadata": candidate["reel"],
+                        }
+                        stmt = (
+                            update(Account)
+                            .where(
+                                Account.id == account_id,
+                                Account.status != "verified",
+                            )
+                            .values(raw_metadata=meta, updated_at=datetime.now(timezone.utc))
+                        )
+                        await session.execute(stmt)
+                        new_count += 1
+                    except Exception as e:
+                        logger.error(
+                            "Failed to upsert Instagram reels-discovered profile %s: %s",
+                            profile_username,
+                            e,
+                            exc_info=True,
+                        )
+                        continue
+
+                await session.commit()
+
+        logger.info(
+            "Reels discovery stats for query='%s' (category='%s', source='reels_search'): "
+            "raw=%d | unique_authors=%d | fetched=%d | valid=%d | new=%d | existing=%d | "
+            "filtered_followers=%d | filtered_cyrillic=%d | fetch_failed=%d",
+            query,
+            category,
+            len(reels),
+            len(unique_usernames),
+            fetched_count,
+            valid_count,
+            new_count,
+            existing_count,
+            filtered_followers,
+            filtered_cyrillic,
+            fetch_failed,
+        )
+        return new_count
 
     async def parse_content(self, account_id: int, platform_id: str, max_items: int = 12) -> int:
         logger.debug(

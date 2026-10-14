@@ -4,6 +4,7 @@ import logging
 import signal
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import delete, select, update
@@ -12,8 +13,16 @@ from src.config.config import Settings, load_settings
 from src.db.database import Database
 from src.db.models import Account, Content
 from src.parser.creators.core.business_detector import BusinessSemanticDetector
+from src.parser.creators.core.db.query_state_repo import (
+    DISCOVERY_SOURCE_PROFILES_SEARCH,
+    DISCOVERY_SOURCE_REELS_SEARCH,
+    is_query_eligible,
+    load_query_states,
+    record_query_run,
+)
 from src.parser.creators.core.queries import SearchQueriesManager
 from src.parser.creators.platforms import get_platform_parser
+from src.parser.creators.platforms.instagram.validators import MIN_SUBSCRIBERS
 from src.parser.creators.sc_client import ScrapeCreatorsClient
 from src.utils.logger import setup_logging
 
@@ -36,7 +45,7 @@ MIN_SUBSCRIBERS_THRESHOLD = 5000
 
 DEFAULT_CREATORS_POLL_INTERVAL_S = 300
 
-MAX_CONSECUTIVE_DISCOVERY_MISSES = 5
+DEFAULT_DISCOVERY_BACKOFF_FACTOR = 2
 
 
 class CreatorsCoordinator:
@@ -52,11 +61,21 @@ class CreatorsCoordinator:
         self.settings = settings
         self._shutdown_event = shutdown_event
         self.platform_filter: str | None = platform
-        self.min_subscribers: int = settings.creators_min_subscribers
+        self.min_subscribers: int = max(
+            settings.creators_min_subscribers,
+            MIN_SUBSCRIBERS,
+        )
         self.status_threshold_hours: int = (
             settings.creators_status_threshold_hours
         )
         self.poll_interval_s: int = settings.creators_poll_interval_s
+
+        self.discovery_miss_threshold: int = settings.discovery_query_miss_threshold
+        self.discovery_cooldown_days: int = settings.discovery_query_cooldown_days
+        self._discovery_backoff_initial_s: int = settings.discovery_backoff_initial_s
+        self._discovery_backoff_max_s: int = settings.discovery_backoff_max_s
+        self._discovery_backoff_s: int = settings.discovery_backoff_initial_s
+        self._discovery_pool_exhausted: bool = False
 
         self.business_detector = BusinessSemanticDetector(settings, margin=0.02)
 
@@ -68,20 +87,24 @@ class CreatorsCoordinator:
             f"CreatorsCoordinator initialized with min_subscribers={self.min_subscribers}, "
             f"status_threshold_hours={self.status_threshold_hours}, "
             f"poll_interval_s={self.poll_interval_s}, "
-            f"platform_filter={self.platform_filter}"
+            f"platform_filter={self.platform_filter}, "
+            f"discovery_miss_threshold={self.discovery_miss_threshold}, "
+            f"discovery_cooldown_days={self.discovery_cooldown_days}"
         )
 
     async def close(self) -> None:
         await self.business_detector.close()
 
-    def _get_next_queries(self, count: int) -> list[tuple[str, str]]:
-        balanced_queries = self._queries_manager.get_balanced_queries()
-
-        if not balanced_queries:
+    def _get_next_queries(
+        self,
+        count: int,
+        queries: list[tuple[str, str]],
+    ) -> list[tuple[str, str]]:
+        if not queries:
             return []
 
         grouped: dict[str, list[str]] = defaultdict(list)
-        for query, category in balanced_queries:
+        for query, category in queries:
             grouped[category].append(query)
 
         sorted_categories: list[str] = sorted(grouped.keys())
@@ -104,6 +127,118 @@ class CreatorsCoordinator:
 
         return selected_queries
 
+    async def _load_eligible_queries(
+        self,
+        platform: str,
+        balanced_queries: list[tuple[str, str]],
+    ) -> list[tuple[str, str]]:
+        if not balanced_queries:
+            return []
+
+        queries = [query for query, _ in balanced_queries]
+        now = datetime.now(timezone.utc)
+
+        async with self.db.async_session() as session:
+            reels_states = await load_query_states(
+                session, platform, DISCOVERY_SOURCE_REELS_SEARCH, queries
+            )
+            profiles_states = await load_query_states(
+                session, platform, DISCOVERY_SOURCE_PROFILES_SEARCH, queries
+            )
+
+        eligible = [
+            (query, category)
+            for query, category in balanced_queries
+            if is_query_eligible(reels_states.get(query), self.discovery_cooldown_days, now)
+            or is_query_eligible(profiles_states.get(query), self.discovery_cooldown_days, now)
+        ]
+
+        skipped_count = len(balanced_queries) - len(eligible)
+        if skipped_count:
+            logger.info(
+                f"Discovery: {skipped_count}/{len(balanced_queries)} queries skipped "
+                f"(exhausted, cooldown {self.discovery_cooldown_days}d)."
+            )
+
+        return eligible
+
+    async def _record_query_outcome(
+        self,
+        platform: str,
+        source: str,
+        query: str,
+        category: str,
+        found_new: bool,
+    ) -> None:
+        async with self.db.async_session() as session:
+            await record_query_run(
+                session=session,
+                platform=platform,
+                source=source,
+                query=query,
+                category=category,
+                found_new=found_new,
+                miss_threshold=self.discovery_miss_threshold,
+            )
+            await session.commit()
+
+    async def _discover_with_reels_fallback(
+        self,
+        parser: Any,
+        platform: str,
+        query: str,
+        category: str,
+    ) -> int:
+        reels_supported = True
+        new_reels = 0
+        try:
+            new_reels = await parser.discover_candidates_via_reels(query, category)
+        except NotImplementedError:
+            reels_supported = False
+        except Exception as e:
+            logger.error(
+                f"Reels-based discovery failed for query='{query}' "
+                f"on platform={platform}: {e!r}",
+                exc_info=e,
+            )
+
+        if reels_supported:
+            await self._record_query_outcome(
+                platform, DISCOVERY_SOURCE_REELS_SEARCH, query, category, new_reels > 0
+            )
+
+        new_profiles = 0
+        if new_reels == 0:
+            new_profiles = await parser.discover_candidates(query, category)
+            await self._record_query_outcome(
+                platform, DISCOVERY_SOURCE_PROFILES_SEARCH, query, category, new_profiles > 0
+            )
+
+        return new_reels + new_profiles
+
+    def _reset_discovery_backoff(self) -> None:
+        if self._discovery_backoff_s != self._discovery_backoff_initial_s:
+            logger.info(
+                f"Discovery backoff reset to {self._discovery_backoff_initial_s}s "
+                f"(new candidates found)."
+            )
+        self._discovery_backoff_s = self._discovery_backoff_initial_s
+
+    def get_poll_interval_with_backoff(self) -> int:
+        if not self._discovery_pool_exhausted:
+            return self.poll_interval_s
+        backoff_s = max(self._discovery_backoff_s, self.poll_interval_s)
+        logger.info(
+            f"Discovery query pool exhausted. Sleeping {backoff_s}s "
+            f"(exponential backoff, capped at {self._discovery_backoff_max_s}s) "
+            f"instead of {self.poll_interval_s}s. No discovery credits are spent."
+        )
+        self._discovery_backoff_s = min(
+            self._discovery_backoff_s * DEFAULT_DISCOVERY_BACKOFF_FACTOR,
+            self._discovery_backoff_max_s,
+        )
+        return backoff_s
+
     async def _ensure_pending_queue(
         self,
         platform: str,
@@ -112,11 +247,33 @@ class CreatorsCoordinator:
         active_platform = self.platform_filter if self.platform_filter else platform
         threshold = self.settings.creators_batch_size * 2
 
+        self._discovery_pool_exhausted = False
+
+        pending_count = await self.db.count_pending_creator_accounts(active_platform)
+        if pending_count >= threshold:
+            logger.info(
+                f"Pending queue sufficiently populated ({pending_count} >= {threshold}). "
+                f"Skipping discovery."
+            )
+            return 0
+
         balanced_queries = self._queries_manager.get_balanced_queries()
-        max_attempts = len(balanced_queries)
+        eligible_queries = await self._load_eligible_queries(active_platform, balanced_queries)
+
+        if not eligible_queries:
+            logger.info(
+                f"Discovery query pool fully exhausted (all queries exhausted within "
+                f"{self.discovery_cooldown_days}d cooldown). Backing off for "
+                f"{self._discovery_backoff_s}s. No API credits will be spent on discovery."
+            )
+            self._discovery_pool_exhausted = True
+            return 0
+
+        max_attempts = len(eligible_queries)
         attempts: int = 0
         consecutive_misses: int = 0
         total_discovered_in_batch: int = 0
+        attempted_in_cycle: set[tuple[str, str]] = set()
 
         parser = get_platform_parser(
             platform=active_platform,
@@ -135,12 +292,21 @@ class CreatorsCoordinator:
                 )
                 break
 
-            next_queries = self._get_next_queries(count=1)
-            if not next_queries:
-                logger.warning("No more queries available for discovery.")
+            query: str | None = None
+            category: str | None = None
+            for _ in range(len(eligible_queries)):
+                next_queries = self._get_next_queries(count=1, queries=eligible_queries)
+                if not next_queries:
+                    break
+                candidate_query, candidate_category = next_queries[0]
+                if (candidate_query, candidate_category) not in attempted_in_cycle:
+                    query, category = candidate_query, candidate_category
+                    break
+            if query is None or category is None:
+                logger.info("All eligible queries were attempted in this cycle. Stopping discovery loop.")
                 break
 
-            query, category = next_queries[0]
+            attempted_in_cycle.add((query, category))
 
             logger.info(
                 f"Pending queue running low ({pending_count} < {threshold}). "
@@ -155,10 +321,12 @@ class CreatorsCoordinator:
                     f"Discovering candidates for query='{query}', "
                     f"category='{category}' on platform={active_platform}"
                 )
-                discovered_count = await parser.discover_candidates(query, category)
+                discovered_count = await self._discover_with_reels_fallback(
+                    parser, active_platform, query, category
+                )
                 total_discovered_in_batch += discovered_count
                 logger.info(
-                    f"Discovered {discovered_count} accounts for query='{query}', "
+                    f"Discovered {discovered_count} new pending accounts for query='{query}', "
                     f"category='{category}' on platform={active_platform}"
                 )
             except Exception as e:
@@ -172,13 +340,14 @@ class CreatorsCoordinator:
 
             if new_pending_count > prev_pending_count:
                 consecutive_misses = 0
+                self._reset_discovery_backoff()
             else:
                 consecutive_misses += 1
                 logger.info(
                     f"Query '{query}' produced no new pending accounts. "
-                    f"Consecutive misses: {consecutive_misses}/{MAX_CONSECUTIVE_DISCOVERY_MISSES}"
+                    f"Consecutive misses: {consecutive_misses}/{self.discovery_miss_threshold}"
                 )
-                if consecutive_misses >= MAX_CONSECUTIVE_DISCOVERY_MISSES:
+                if consecutive_misses >= self.discovery_miss_threshold:
                     logger.info(
                         f"Discovery loop stopped after {consecutive_misses} consecutive misses "
                         f"(attempts={attempts}/{max_attempts}, pending_count={new_pending_count}). "
@@ -534,6 +703,14 @@ class CreatorsCoordinator:
         for platform in platforms_to_process:
             logger.info(f"Starting discovery for platform: {platform}")
 
+            eligible_queries = await self._load_eligible_queries(platform, balanced_queries)
+            if not eligible_queries:
+                logger.info(
+                    f"No eligible queries for platform={platform} "
+                    f"(all exhausted within {self.discovery_cooldown_days}d cooldown). Skipping."
+                )
+                continue
+
             async with ScrapeCreatorsClient(self.settings) as client:
                 parser = get_platform_parser(
                     platform=platform,
@@ -542,7 +719,7 @@ class CreatorsCoordinator:
                     settings=self.settings,
                 )
 
-                for query, category in balanced_queries:
+                for query, category in eligible_queries:
                     if self.is_shutdown_requested():
                         logger.info("Shutdown requested during discovery. Aborting early.")
                         return
@@ -552,9 +729,11 @@ class CreatorsCoordinator:
                             f"Discovering candidates for query='{query}', "
                             f"category='{category}' on platform={platform}"
                         )
-                        discovered_count = await parser.discover_candidates(query, category)
+                        discovered_count = await self._discover_with_reels_fallback(
+                            parser, platform, query, category
+                        )
                         logger.info(
-                            f"Discovered {discovered_count} accounts for query='{query}', "
+                            f"Discovered {discovered_count} new pending accounts for query='{query}', "
                             f"category='{category}' on platform={platform}"
                         )
                     except Exception as e:
@@ -708,12 +887,13 @@ async def main() -> None:
                 )
                 break
 
+            sleep_interval_s: int = coordinator.get_poll_interval_with_backoff()
             logger.info(
-                f"Sleeping for {coordinator.poll_interval_s}s until next batch..."
+                f"Sleeping for {sleep_interval_s}s until next batch..."
             )
             shutdown_during_sleep: bool = await _sleep_with_shutdown_check(
                 shutdown_event=shutdown_event,
-                interval_s=coordinator.poll_interval_s,
+                interval_s=sleep_interval_s,
             )
             if shutdown_during_sleep:
                 logger.info("Shutdown requested during sleep, exiting.")

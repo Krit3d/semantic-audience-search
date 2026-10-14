@@ -929,3 +929,64 @@ class Publication(Base):
     account: Mapped["Account"] = relationship(lazy="joined")
     deal: Mapped["Deal | None"] = relationship(lazy="joined")
     brand: Mapped["Brand | None"] = relationship(lazy="joined")
+
+
+class DiscoveryQuery(Base):
+    __tablename__ = "discovery_queries"
+    __table_args__ = (
+        UniqueConstraint(
+            "platform", "source", "query_text", name="uq_discovery_queries_platform_source_query"
+        ),
+        Index("idx_discovery_queries_exhausted", "platform", "exhausted"),
+        {"comment": "Persistent state of creator discovery search queries (per-platform, per-source exhaustion tracking)"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    platform: Mapped[str] = mapped_column(String(50), nullable=False)
+    source: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        comment="Discovery source: 'profiles_search' or 'reels_search'",
+    )
+    query_text: Mapped[str] = mapped_column(String(500), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp of the last discovery run for this query",
+    )
+    consecutive_misses: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+        comment="Count of consecutive runs that produced no new pending accounts",
+    )
+    exhausted: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+        comment="True when the query is considered exhausted and must not be retried until cooldown passes",
+    )
+    exhausted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp when the query was marked exhausted",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<DiscoveryQuery(platform={self.platform}, source={self.source}, query={self.query_text!r}, exhausted={self.exhausted})>"

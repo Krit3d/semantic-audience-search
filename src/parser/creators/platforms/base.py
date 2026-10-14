@@ -108,3 +108,20 @@ class BasePlatformParser(abc.ABC):
             The number of newly discovered or updated accounts.
         """
         raise NotImplementedError("Subclasses must implement discover_candidates()")
+
+    async def discover_candidates_via_reels(self, query: str, category: str) -> int:
+        """Discover candidate accounts via reels search (platforms that support it).
+
+        Args:
+            query: The search query string.
+            category: The category name associated with this query.
+
+        Returns:
+            The number of newly discovered pending accounts.
+
+        Raises:
+            NotImplementedError: If the platform does not support reels search.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support reels-based discovery"
+        )

@@ -298,11 +298,6 @@ class EmbeddingWorker:
             shares_count: int = post.shares_count or 0
             reactions_count: int = post.reactions_count or 0
 
-            if subscribers_count > 0:
-                engagement_rate = round((reactions_count + comments_count) / subscribers_count, 4)
-            else:
-                engagement_rate = 0.0
-
             published_at_ts: int | None = int(post.published_at.timestamp()) if post.published_at else None
 
             payload: dict[str, Any] = {
@@ -315,10 +310,13 @@ class EmbeddingWorker:
                 "comments_count": comments_count,
                 "shares_count": shares_count,
                 "reactions_count": reactions_count,
-                "engagement_rate": engagement_rate,
                 "published_at": published_at_ts,
                 "text": stripped_text,
             }
+
+            static_avg_er: float | None = account.static_avg_er if account else None
+            if static_avg_er is not None:
+                payload["static_avg_er"] = static_avg_er
 
             points.append(payload)
             valid_posts.append(post)
@@ -609,7 +607,7 @@ async def _verify_after_run(
     expected_payload_keys = {
         "post_id", "account_id", "platform", "subscribers_count",
         "is_author_blog", "views", "comments_count", "shares_count",
-        "reactions_count", "engagement_rate", "published_at", "text",
+        "reactions_count", "published_at", "text",
     }
 
     for record in records:

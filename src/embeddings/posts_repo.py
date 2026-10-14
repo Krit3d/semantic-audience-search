@@ -175,7 +175,7 @@ class PostsVectorRepository:
         limit: int = 10,
         score_threshold: float = 0.0,
         min_followers: int | None = None,
-        min_engagement_rate: float | None = None,
+        min_static_avg_er: float | None = None,
         platform: str | None = None,
     ) -> list[dict[str, Any]]:
         if not self._client_manager._initialized:
@@ -201,11 +201,11 @@ class PostsVectorRepository:
                         range=models.Range(gte=min_followers),
                     )
                 )
-            if min_engagement_rate is not None:
+            if min_static_avg_er is not None:
                 filter_conditions.append(
                     models.FieldCondition(
-                        key="engagement_rate",
-                        range=models.Range(gte=min_engagement_rate),
+                        key="static_avg_er",
+                        range=models.Range(gte=min_static_avg_er),
                     )
                 )
             if platform is not None:
@@ -237,7 +237,7 @@ class PostsVectorRepository:
                 entry: dict[str, Any] = {
                     "post_id": hit.id,
                     "score": hit.score,
-                    "engagement_rate": hit.payload.get("engagement_rate", 0.0) if hit.payload else 0.0,
+                    "static_avg_er": hit.payload.get("static_avg_er") if hit.payload else None,
                     "subscribers_count": hit.payload.get("subscribers_count", 0) if hit.payload else 0,
                     "platform": hit.payload.get("platform", "") if hit.payload else "",
                 }

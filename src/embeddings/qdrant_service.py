@@ -107,7 +107,7 @@ class QdrantService:
         limit: int = 10,
         score_threshold: float = 0.0,
         min_followers: int | None = None,
-        min_engagement_rate: float | None = None,
+        min_static_avg_er: float | None = None,
         platform: str | None = None,
     ) -> list[dict]:
         return await self.posts_repo.search_posts(
@@ -116,7 +116,7 @@ class QdrantService:
             limit=limit,
             score_threshold=score_threshold,
             min_followers=min_followers,
-            min_engagement_rate=min_engagement_rate,
+            min_static_avg_er=min_static_avg_er,
             platform=platform,
         )
 

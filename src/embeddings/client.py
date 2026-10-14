@@ -137,7 +137,7 @@ class QdrantClientManager:
                 )
                 await self.client.create_payload_index(
                     collection_name=posts_collection,
-                    field_name="engagement_rate",
+                    field_name="static_avg_er",
                     field_schema=models.PayloadSchemaType.FLOAT,
                 )
                 await self.client.create_payload_index(
@@ -245,7 +245,7 @@ class QdrantClientManager:
             ("account_id", models.PayloadSchemaType.INTEGER),
             ("is_author_blog", models.PayloadSchemaType.BOOL),
             ("subscribers_count", models.PayloadSchemaType.INTEGER),
-            ("engagement_rate", models.PayloadSchemaType.FLOAT),
+            ("static_avg_er", models.PayloadSchemaType.FLOAT),
             ("platform", models.PayloadSchemaType.KEYWORD),
         ]
         if await self.client.collection_exists(self.collection_name):

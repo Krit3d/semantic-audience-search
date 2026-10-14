@@ -283,7 +283,9 @@ class ActorNode(BaseModel):
     name: str
     name_lower: str | None = None
     handle: str
-    location_name: str | None = None
+    city: str | None = None
+    country: str | None = None
+    gender: str | None = None
     platform: PlatformType
     platform_id: str
     primary_language: str | None = None

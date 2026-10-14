@@ -53,12 +53,16 @@ ON CREATE SET
     a.handle = row.handle,
     a.platform = row.platform,
     a.platform_id = row.platform_id,
-    a.location_name = row.location_name
+    a.city = row.city,
+    a.country = row.country,
+    a.gender = row.gender
 ON MATCH SET
     a.name = row.name,
     a.name_lower = row.name_lower,
     a.handle = row.handle,
-    a.location_name = coalesce(row.location_name, a.location_name)
+    a.city = coalesce(row.city, a.city),
+    a.country = coalesce(row.country, a.country),
+    a.gender = coalesce(row.gender, a.gender)
 """
 
 
@@ -155,7 +159,9 @@ async def sync_verified_actors(db: Database, client: Neo4jClient, batch_size: in
                     Account.platform_id,
                     Account.username,
                     Account.title,
-                    Account.raw_metadata,
+                    Account.city,
+                    Account.country,
+                    Account.gender,
                 )
                 .where(*conditions)
                 .order_by(Account.id.asc())
@@ -169,15 +175,6 @@ async def sync_verified_actors(db: Database, client: Neo4jClient, batch_size: in
 
         batch: list[dict[str, Any]] = []
         for row in accounts:
-            raw = row.raw_metadata or {}
-            location_name: str | None = None
-            if isinstance(raw, dict):
-                location_name = raw.get("location")
-                if not location_name:
-                    geo = raw.get("geo_data")
-                    if isinstance(geo, dict):
-                        location_name = geo.get("city")
-
             name = row.title or row.username or f"Account_{row.id}"
 
             if not row.platform:
@@ -192,7 +189,9 @@ async def sync_verified_actors(db: Database, client: Neo4jClient, batch_size: in
                 "handle": row.username,
                 "platform": platform_str,
                 "platform_id": str(row.platform_id) if row.platform_id else "",
-                "location_name": location_name,
+                "city": row.city,
+                "country": row.country,
+                "gender": row.gender,
             })
 
         await client.execute_write(BATCH_UNWIND_ACTOR, {"batch": batch})

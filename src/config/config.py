@@ -414,6 +414,10 @@ class Settings(BaseSettings):
         default="https://crm.collabrama.ru",
         description="Public URL of the CRM frontend interface",
     )
+    auth_cookie_domain: str = Field(
+        default="",
+        description="Domain attribute for the cf_auth routing cookie (e.g. .collabrama.ru); empty means host-only cookie",
+    )
     secret_key: str = Field(
         ...,
         validation_alias="CRM_JWT_SECRET_KEY",

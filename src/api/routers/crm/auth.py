@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import func, select
 
 from src.api.dependencies import get_current_user, get_crm_client, get_db
@@ -9,17 +9,30 @@ from src.api.services.crm_client import TwentyCrmClient
 from src.db.database import Database
 from src.db.models import User
 from src.utils.rate_limiter import rate_limit
-from src.utils.security import create_access_token, hash_password, verify_password
+from src.utils.security import AUTH_COOKIE_MAX_AGE, AUTH_COOKIE_NAME, create_access_token, hash_password, verify_password
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["CRM Auth"])
 
 
+def _set_auth_cookie(response: Response, settings) -> None:
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value="1",
+        max_age=AUTH_COOKIE_MAX_AGE,
+        path="/",
+        samesite="lax",
+        secure=bool(settings.auth_cookie_domain),
+        domain=settings.auth_cookie_domain or None,
+    )
+
+
 @router.post("/login", response_model=CrmLoginResponse)
 async def crm_login(
     payload: CrmLoginRequest,
     request: Request,
+    response: Response,
     db: Database = Depends(get_db),
     crm_client: TwentyCrmClient = Depends(get_crm_client),
     _rate_limit: None = Depends(rate_limit(max_requests=5, window_seconds=60)),
@@ -39,6 +52,7 @@ async def crm_login(
             {"sub": user.email, "user_id": user.id},
             request.app.state.settings.secret_key,
         )
+        _set_auth_cookie(response, request.app.state.settings)
         return CrmLoginResponse(
             token=access_token,
             user={"id": user.id, "email": user.email, "name": user.name or user.email.split("@")[0], "is_admin": user.is_admin},
@@ -82,6 +96,7 @@ async def crm_login(
         {"sub": user_email, "user_id": user_id},
         request.app.state.settings.secret_key,
     )
+    _set_auth_cookie(response, request.app.state.settings)
     return CrmLoginResponse(
         token=access_token,
         user={"id": user_id, "email": user_email, "name": user_name, "is_admin": user_is_admin},
@@ -92,6 +107,7 @@ async def crm_login(
 async def crm_register(
     payload: CrmRegisterRequest,
     request: Request,
+    response: Response,
     db: Database = Depends(get_db),
     _rate_limit: None = Depends(rate_limit(max_requests=5, window_seconds=60)),
 ) -> CrmLoginResponse:
@@ -119,6 +135,7 @@ async def crm_register(
         {"sub": user_email, "user_id": user_id},
         request.app.state.settings.secret_key,
     )
+    _set_auth_cookie(response, request.app.state.settings)
     return CrmLoginResponse(
         token=access_token,
         user={"id": user_id, "email": user_email, "name": user_name, "is_admin": user_is_admin},

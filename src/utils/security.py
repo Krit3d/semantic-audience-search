@@ -12,6 +12,8 @@ PBKDF2_ITERATIONS = 600_000
 SALT_BYTES = 16
 HASH_ALGORITHM = "sha256"
 JWT_ALGORITHM = "HS256"
+AUTH_COOKIE_NAME = "cf_auth"
+AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 
 
 def hash_password(password: str) -> str:

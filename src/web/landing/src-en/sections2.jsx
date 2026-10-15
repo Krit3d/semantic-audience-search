@@ -1,0 +1,274 @@
+import React from "react";
+import { I } from "../src/icons.jsx";
+import { TrendFlow } from "../src/mockups.jsx";
+import { Section, SectionHead } from "./sections.jsx";
+import { SearchBox } from "./hero.jsx";
+// Sections: audience → use cases → comparison → vision → objections → final CTA → FAQ → footer
+
+// — Section 10: For whom (3 segments) —
+const AudienceSection = () => {
+  const cards = [
+    {
+      icon: <I.Briefcase size={16}/>,
+      title: 'Brands & e-commerce',
+      lead: 'Launch campaigns faster, find creators for a specific product and keep every negotiation in one place.',
+      hue: 250,
+    },
+    {
+      icon: <I.Store size={16}/>,
+      title: 'Marketplace sellers',
+      lead: 'Test micro- and mid-tier creators for products on Amazon, Etsy and other marketplaces — without a dedicated outreach manager.',
+      hue: 290,
+    },
+    {
+      icon: <I.Users size={16}/>,
+      title: 'Marketing agencies',
+      lead: 'Run more clients and campaigns without a proportional rise in manual work, spreadsheets and per-thread oversight.',
+      hue: 220,
+    },
+  ];
+  return (
+    <Section id="audience" className="py-16 sm:py-20">
+      <SectionHead title="For teams that work with creators on a regular basis" />
+      <div className="mt-8 grid md:grid-cols-3 gap-3">
+        {cards.map((c, i) => (
+          <div key={i} className="card-soft p-4">
+            <div className="flex items-center gap-2.5">
+              <span className="w-8 h-8 rounded-lg text-white flex items-center justify-center shrink-0"
+                    style={{background:`linear-gradient(135deg, hsl(${c.hue} 70% 60%), hsl(${(c.hue+40)%360} 70% 55%))`}}>
+                {c.icon}
+              </span>
+              <div className="text-[14px] font-semibold text-ink-900">{c.title}</div>
+            </div>
+            <p className="mt-2.5 text-[13px] leading-relaxed text-ink-600 text-pretty">{c.lead}</p>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+};
+
+// — Section 11: Use cases —
+const UseCasesSection = () => {
+  const items = [
+    { i:<I.Telegram size={14}/>, t:'Find 50 Telegram channels to seed a new product' },
+    { i:<I.Tiktok size={14}/>,   t:'Assemble TikTok creators for UGC content' },
+    { i:<I.Store size={14}/>,    t:'Find creators for a product on Amazon' },
+    { i:<I.Coin size={14}/>,     t:'Launch barter negotiations' },
+    { i:<I.Sliders size={14}/>,  t:'Compare creators by price and engagement' },
+    { i:<I.Sparkle size={14}/>,  t:'Automate follow-ups with everyone who didn\u2019t reply' },
+    { i:<I.Layers size={14}/>,   t:'Build a creator base for repeat placements' },
+    { i:<I.Trend size={14}/>,    t:'Track results for every placement' },
+  ];
+  return (
+    <Section className="py-16 sm:py-20">
+      <SectionHead
+        title="What you can run in Collabrama"
+      />
+      <div className="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {items.map((it, i) => (
+          <div key={i} className="card-soft p-4 flex items-start gap-3">
+            <span className="w-8 h-8 rounded-lg accent-soft-bg flex items-center justify-center accent-text shrink-0">{it.i}</span>
+            <div className="text-[13.5px] font-medium leading-snug text-ink-800 pt-1">{it.t}</div>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+};
+
+// — Section 12: Comparison table —
+const CompareSection = () => {
+  const rows = [
+    ['Searching channels, referrals and old spreadsheets', 'Semantic search matched to product and audience'],
+    ['The shortlist depends on the manager\u2019s subjective pick', 'Selection by relevance, data and brand terms'],
+    ['Every creator has to be messaged separately', 'Mass personalized messages'],
+    ['Statuses live in your head or a spreadsheet', 'A single CRM pipeline across all creators'],
+    ['Follow-ups are easy to forget', 'Prompts for the next steps'],
+    ['Terms scattered across chats', 'Price, format, deadline and terms in one place'],
+    ['After a campaign the base isn\u2019t organized', 'Creator base and placement history stay inside the company'],
+  ];
+  return (
+    <Section className="py-16 sm:py-20">
+      <SectionHead
+        title="Instead of manual search, spreadsheets and lost chats"
+      />
+      <div className="mt-10 card overflow-hidden">
+        <div className="grid grid-cols-2 text-[11.5px] font-semibold uppercase tracking-wide">
+          <div className="px-5 sm:px-7 py-3.5 bg-ink-50 text-ink-500 border-r border-ink-100">Manual process</div>
+          <div className="px-5 sm:px-7 py-3.5 accent-soft-bg accent-text flex items-center gap-2">
+            <I.Sparkle size={12}/> Collabrama
+          </div>
+        </div>
+        <div className="divide-soft">
+          {rows.map((r, i) => (
+            <div key={i} className="grid grid-cols-2">
+              <div className="px-5 sm:px-7 py-4 text-[13.5px] text-ink-500 border-r border-ink-100 flex items-start gap-2.5">
+                <I.Close size={14} className="text-ink-300 mt-0.5 shrink-0"/>
+                <span className="leading-relaxed">{r[0]}</span>
+              </div>
+              <div className="px-5 sm:px-7 py-4 text-[13.5px] text-ink-900 flex items-start gap-2.5">
+                <I.Check size={14} className="accent-text mt-0.5 shrink-0"/>
+                <span className="leading-relaxed font-medium">{r[1]}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Section>
+  );
+};
+
+// — Section 13: Vision — trend analytics —
+const VisionSection = () => (
+  <Section id="vision" className="py-16 sm:py-20">
+    <SectionHead
+      eyebrow="Vision · advanced analytics"
+      title="The next level — trend analytics and performance forecasting"
+      subtitle="Collabrama is moving toward advanced analytics: tracking how trends emerge on one platform and flow into others, so you can prepare timely briefs for a specific platform ahead of time."
+      accent
+    />
+    <div className="mt-10">
+      <TrendFlow/>
+    </div>
+  </Section>
+);
+
+// — Section 14: Objections —
+const ObjectionsSection = () => {
+  const items = [
+    { q:'“Isn\u2019t this just a creator database?”',
+      a:'No. The database is only part of the process. Collabrama helps you search, shortlist, message, track statuses, record terms and analyze placements.' },
+    { q:'“Does it fully replace a manager?”',
+      a:'No. It removes the routine and helps run the process, but final decisions, terms and control stay with your team.' },
+    { q:'“Can we work without a big budget?”',
+      a:'Yes. You can set barter, CPA, CPM, post-payment or mixed terms. Just keep in mind: the tougher the terms, the lower the acceptance rate.' },
+    { q:'“How do we know a creator will fit?”',
+      a:'Collabrama helps assess relevance by product meaning, audience, content, platform, terms and data — but final performance is always proven by a test.' },
+  ];
+  return (
+    <Section className="py-16 sm:py-20">
+      <SectionHead
+        title="What to keep in mind before you start"
+      />
+      <div className="mt-10 grid md:grid-cols-2 gap-4">
+        {items.map((it, i) => (
+          <div key={i} className="card-soft p-6">
+            <div className="flex items-start gap-3">
+              <span className="w-9 h-9 rounded-xl bg-ink-50 border border-ink-100 flex items-center justify-center text-ink-700 shrink-0">
+                <I.Question size={16}/>
+              </span>
+              <div className="text-[15.5px] font-semibold text-ink-900 leading-snug pt-1">{it.q}</div>
+            </div>
+            <div className="mt-4 pl-12 text-[14px] text-ink-600 leading-relaxed text-pretty">{it.a}</div>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+};
+
+// — Section 15: Final CTA —
+const FinalCTASection = ({ onSearch }) => {
+  const placeholder = "For example: A sports-nutrition brand — protein and pre-workouts, sold on Amazon and our own site. We need creators who genuinely understand training and nutrition (not just fitness visuals): they talk about ingredients, macros, routines and recovery. Audience — men 20–35, US & UK. Telegram and TikTok. Format — an honest review with personal experience and a demo. Tone of voice — expert, no hype and no “miracle results” promises. Budget — barter or a flat fee up to $500, open to CPA with a promo code.";
+  return (
+    <Section className="py-16 sm:py-20">
+      <div className="relative card overflow-hidden p-6 sm:p-10 lg:p-14">
+        <div className="absolute inset-0 pointer-events-none opacity-90"
+             style={{background:'radial-gradient(60% 100% at 50% 0%, color-mix(in oklch, var(--accent) 12%, transparent), transparent 70%)'}}/>
+        <div className="absolute -right-32 -bottom-32 w-[420px] h-[420px] rounded-full opacity-30 pointer-events-none"
+             style={{background:'radial-gradient(closest-side, var(--accent-2), transparent 70%)'}}/>
+        <div className="relative max-w-[860px] mx-auto text-center">
+          <h2 className="text-[32px] sm:text-[44px] leading-[1.05] font-bold tracking-[-0.02em] text-balance">
+            Try <span className="grad-text">smart matching</span> for your product
+          </h2>
+          <p className="mt-5 text-[16px] leading-relaxed text-ink-600 max-w-[640px] mx-auto text-pretty">
+            Describe your product in detail — the more specific, the more precise the match. Collabrama
+            will show what a lineup of creators whose content matches your product could look like.
+          </p>
+          <div className="mt-7 max-w-[680px] mx-auto text-left">
+            <SearchBox
+              placeholder={placeholder}
+              onSubmit={onSearch}
+              label="Describe your product details"
+            />
+          </div>
+        </div>
+      </div>
+    </Section>
+  );
+};
+
+// — Section 16: FAQ —
+const FAQSection = () => {
+  const items = [
+    { q:'Is this a creator database?',
+      a:'No. Collabrama is a system for searching, shortlisting, communicating and managing creator placements.' },
+    { q:'How does semantic search differ from regular filters?',
+      a:'Regular filters search by category, platform and follower count. Collabrama accounts for the product meaning, the brand\u2019s audience, visual style, tone of voice, collaboration terms and a creator\u2019s potential relevance.' },
+    { q:'Can I send mass messages?',
+      a:'Yes. The whole point is to help you run dozens of negotiations in parallel — but with personalization and status control.' },
+    { q:'Does the service negotiate with creators on its own?',
+      a:'Collabrama helps prepare messages and follow-ups and record replies, terms and next steps. Final decisions and agreeing terms stay with your team.' },
+    { q:'Can I work on barter or CPA?',
+      a:'Yes. In the campaign terms you can set different models: flat fee, barter, CPM, CPA, post-payment or custom terms.' },
+    { q:'Is it a fit for marketplace sellers?',
+      a:'Yes. Especially if you need to regularly test placements with micro- and mid-tier creators for specific products.' },
+    { q:'Is it a fit for agencies?',
+      a:'Yes. Agencies can run more campaigns and clients in a single system without a proportional rise in manual work.' },
+    { q:'Is trend analytics available yet?',
+      a:'That\u2019s a direction of product development. Collabrama\u2019s first focus is finding relevant creators, mass outreach, the CRM pipeline and placement analytics.' },
+  ];
+  const [open, setOpen] = React.useState(0);
+  return (
+    <Section id="faq" className="py-16 sm:py-20">
+      <div className="grid lg:grid-cols-12 gap-10 items-start">
+        <div className="lg:col-span-4">
+          <SectionHead
+            title="Frequently asked questions"
+            subtitle="If anything is unclear, drop us a line and we\u2019ll add the answer here."
+          />
+        </div>
+        <div className="lg:col-span-8">
+          <div className="card divide-soft">
+            {items.map((it, i) => {
+              const isOpen = open === i;
+              return (
+                <button
+                  key={i}
+                  onClick={() => setOpen(isOpen ? -1 : i)}
+                  className="w-full text-left px-5 sm:px-6 py-5 flex items-start gap-4 hover:bg-ink-50/40 transition-colors"
+                >
+                  <span className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 transition-colors
+                                    ${isOpen ? 'accent-bg text-white' : 'bg-ink-100 text-ink-600'}`}>
+                    {isOpen ? <I.Minus size={13}/> : <I.Plus size={13}/>}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[15px] font-semibold text-ink-900 text-pretty">{it.q}</div>
+                    {isOpen && (
+                      <div className="mt-2.5 text-[14px] leading-relaxed text-ink-600 animate-rise text-pretty">{it.a}</div>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Section>
+  );
+};
+
+// — Section 17: Footer —
+const Footer = ({ onSearch }) => (
+  <footer className="relative mt-10 border-t border-ink-100 bg-white/60">
+    <div className="max-w-[1200px] mx-auto px-5 sm:px-8 py-8 flex flex-wrap items-center justify-between gap-3">
+      <p className="text-[13px] leading-relaxed text-ink-600 max-w-[560px] text-pretty">
+        An AI system for finding creators, running mass negotiations and managing influencer campaigns.
+      </p>
+      <div className="text-[12.5px] text-ink-500">© 2026 Collabrama</div>
+    </div>
+  </footer>
+);
+
+export { AudienceSection, UseCasesSection, CompareSection, VisionSection, ObjectionsSection, FinalCTASection, FAQSection, Footer };

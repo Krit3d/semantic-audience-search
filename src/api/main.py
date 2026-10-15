@@ -23,6 +23,7 @@ from src.config.config import MEDIA_DIR, load_settings
 from src.db.database import Database
 from src.embeddings.qdrant_service import QdrantService
 from src.graph.client import Neo4jClient
+from src.utils.security import AUTH_COOKIE_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,9 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web" / "search"
 INDEX_FILE = WEB_DIR / "index.html"
 CSS_FILE = WEB_DIR / "css" / "style.css"
 JS_FILE = WEB_DIR / "js" / "app.js"
+LANDING_DIR = Path(__file__).resolve().parent.parent / "web" / "landing" / "dist"
+LANDING_INDEX_FILE = LANDING_DIR / "index.html"
+LANDING_EN_FILE = LANDING_DIR / "en.html"
 CSS_ASSET = "/css/style.css"
 JS_ASSET = "/js/app.js"
 NO_CACHE_HEADERS = {
@@ -207,17 +211,54 @@ app.include_router(crm.router, prefix="/api/v1")
 app.include_router(support.router, prefix="/api/v1")
 
 
-@app.get("/", response_class=HTMLResponse)
-@app.get("/index.html", response_class=HTMLResponse)
-async def index(request: Request) -> HTMLResponse:
-    settings = request.app.state.settings
+def _render_search_index(settings) -> HTMLResponse:
     html = INDEX_FILE.read_text(encoding="utf-8")
     css_mtime = int(os.path.getmtime(CSS_FILE))
     js_mtime = int(os.path.getmtime(JS_FILE))
     html = html.replace(CSS_ASSET, f"{CSS_ASSET}?t={css_mtime}")
     html = html.replace(JS_ASSET, f"{JS_ASSET}?t={js_mtime}")
-    html = html.replace("__CRM_URL__", settings.crm_frontend_url)
+    html = html.replace('"__CRM_URL__"', f'"{settings.crm_frontend_url}"')
     return HTMLResponse(content=html, headers=NO_CACHE_HEADERS)
+
+
+def _render_landing(settings, page: str = "index") -> HTMLResponse | None:
+    landing_file = LANDING_EN_FILE if page == "en" else LANDING_INDEX_FILE
+    if not landing_file.exists():
+        return None
+    html = landing_file.read_text(encoding="utf-8")
+    html = html.replace('"__CRM_URL__"', f'"{settings.crm_frontend_url}"')
+    return HTMLResponse(content=html, headers=NO_CACHE_HEADERS)
+
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/index.html", response_class=HTMLResponse)
+async def index(request: Request) -> HTMLResponse:
+    settings = request.app.state.settings
+    if request.cookies.get(AUTH_COOKIE_NAME) != "1":
+        landing = _render_landing(settings)
+        if landing is not None:
+            return landing
+    return _render_search_index(settings)
+
+
+@app.get("/landing", response_class=HTMLResponse)
+@app.get("/landing/", response_class=HTMLResponse)
+async def landing(request: Request) -> HTMLResponse:
+    settings = request.app.state.settings
+    page = _render_landing(settings)
+    if page is None:
+        raise HTTPException(status_code=404, detail="Лендинг не собран")
+    return page
+
+
+@app.get("/en.html", response_class=HTMLResponse)
+@app.get("/landing/en.html", response_class=HTMLResponse)
+async def landing_en(request: Request) -> HTMLResponse:
+    settings = request.app.state.settings
+    page = _render_landing(settings, page="en")
+    if page is None:
+        raise HTTPException(status_code=404, detail="Лендинг не собран")
+    return page
 
 
 if WEB_DIR.exists():
@@ -230,6 +271,14 @@ if WEB_DIR.exists():
         "/js",
         NoCacheStaticFiles(directory=str(WEB_DIR / "js"), html=True),
         name="js",
+    )
+
+LANDING_ASSETS_DIR = LANDING_DIR / "assets"
+if LANDING_ASSETS_DIR.exists():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(LANDING_ASSETS_DIR)),
+        name="landing-assets",
     )
 
 @app.get("/media/{filename}")

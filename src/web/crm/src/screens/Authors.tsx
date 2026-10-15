@@ -127,7 +127,7 @@ export default function Authors({ deals, onOpenProfile, onNewDeal, onOpenComms }
     const baseUrl = getSearchBaseUrl();
     const token = window.localStorage.getItem('creatorflow_token');
     if (!token) {
-      window.open(baseUrl, '_blank');
+      window.location.href = baseUrl;
       return;
     }
     const params = new URLSearchParams();
@@ -143,7 +143,7 @@ export default function Authors({ deals, onOpenProfile, onNewDeal, onOpenComms }
       if (user.id != null) params.set('user_id', String(user.id));
       if (user.email != null) params.set('user_email', String(user.email));
     }
-    window.open(`${baseUrl}?${params.toString()}`, '_blank');
+    window.location.href = `${baseUrl}?${params.toString()}`;
   };
 
   useEffect(() => {

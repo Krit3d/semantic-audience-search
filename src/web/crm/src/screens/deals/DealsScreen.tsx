@@ -231,7 +231,7 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
     const user = api.getCurrentUser();
     if (user?.id !== undefined && user?.id !== null) target.searchParams.set('user_id', String(user.id));
     if (typeof user?.email === 'string') target.searchParams.set('user_email', user.email);
-    window.open(target.toString(), '_blank', 'noopener');
+    window.location.href = target.toString();
   };
 
   const renderShortCard = (card: ShortCard) => {

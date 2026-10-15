@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { KanbanSquare, MessageCircle, BarChart3, Users, LifeBuoy, LogOut, Search, Plus, ChevronRight, Zap } from 'lucide-react';
+import { KanbanSquare, MessageCircle, BarChart3, Users, LifeBuoy, LogOut, Search, Plus, ChevronRight, Zap, Globe } from 'lucide-react';
 import { userName } from '../services/api';
 
 export type NavId = 'deals' | 'comms' | 'analytics' | 'base' | 'settings' | 'tickets';
@@ -21,7 +21,7 @@ const openCollabramaSearch = (): void => {
     } catch {
     }
   }
-  window.open(target.toString(), '_blank', 'noopener');
+  window.location.href = target.toString();
 };
 
 const NAV: { id: NavId; label: string; icon: ReactNode }[] = [
@@ -124,6 +124,10 @@ export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDe
 
       <div className="flex-1 min-w-0 flex flex-col">
         <header className="h-[62px] shrink-0 bg-white border-b border-line-soft flex items-center justify-end gap-2 px-6">
+          <a href={`${SEARCH_HOME}/landing`} aria-label="Перейти на лендинг" title="О Collabrama — лендинг"
+            className="w-11 h-11 box-border rounded-xl border border-[#c7c9f5] bg-white text-brand-500 flex items-center justify-center hover:bg-brand-50 transition-colors">
+            <Globe size={18} />
+          </a>
           <button type="button" onClick={openCollabramaSearch} aria-label="Поиск авторов" title="Поиск авторов в Collabrama"
             className="w-11 h-11 box-border rounded-xl border border-[#c7c9f5] bg-white text-brand-500 flex items-center justify-center hover:bg-brand-50 transition-colors">
             <Search size={18} />

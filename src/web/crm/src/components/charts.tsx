@@ -46,11 +46,11 @@ export function LineChart({ labels, series, h = 190, unit = '', money }: { label
           const y = PT + t * (H - PT - PB);
           return <g key={t}>
             <line x1={PL} x2={W - PR} y1={y} y2={y} stroke="#EEF2F7" strokeWidth="1" />
-            <text x={PL - 7} y={y + 3.5} textAnchor="end" fontSize="9.5" fill="#9CA3AF" fontFamily="Inter">{fmt(max - t * max) + (unit && t === 0 ? unit : '')}</text>
+            <text x={PL - 7} y={y + 3.5} textAnchor="end" fontSize="9.5" fill="#9CA3AF" fontFamily="Manrope">{fmt(max - t * max) + (unit && t === 0 ? unit : '')}</text>
           </g>;
         })}
         {labels.map((l, i) => (i % Math.ceil(n / 7) === 0 || i === n - 1) && (
-          <text key={i} x={X(i)} y={H - 8} textAnchor="middle" fontSize="9.5" fill="#9CA3AF" fontFamily="Inter">{l}</text>
+          <text key={i} x={X(i)} y={H - 8} textAnchor="middle" fontSize="9.5" fill="#9CA3AF" fontFamily="Manrope">{l}</text>
         ))}
         {series.map((s, si) => (
           <g key={si}>
@@ -219,14 +219,14 @@ export function Scatter({ points, xLabel, yLabel }: {
     <div className="relative" ref={ref} style={{ height: 230 }}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
         {[0, .5, 1].map(t => <line key={t} x1={PL} x2={W - PR} y1={PT + t * (H - PT - PB)} y2={PT + t * (H - PT - PB)} stroke="#EEF2F7" />)}
-        {[0, .5, 1].map(t => <text key={t} x={PL + t * (W - PL - PR)} y={H - 12} textAnchor="middle" fontSize="9.5" fill="#9CA3AF" fontFamily="Inter">{Math.round(t * maxX)} ₽</text>)}
-        <text x={12} y={PT + 6} fontSize="9.5" fill="#9CA3AF" fontFamily="Inter">{yLabel} →</text>
-        <text x={W - PR} y={H - 12} textAnchor="end" fontSize="9.5" fill="#9CA3AF" fontFamily="Inter">{xLabel}</text>
+        {[0, .5, 1].map(t => <text key={t} x={PL + t * (W - PL - PR)} y={H - 12} textAnchor="middle" fontSize="9.5" fill="#9CA3AF" fontFamily="Manrope">{Math.round(t * maxX)} ₽</text>)}
+        <text x={12} y={PT + 6} fontSize="9.5" fill="#9CA3AF" fontFamily="Manrope">{yLabel} →</text>
+        <text x={W - PR} y={H - 12} textAnchor="end" fontSize="9.5" fill="#9CA3AF" fontFamily="Manrope">{xLabel}</text>
         {points.map((p, i) => (
           <g key={i} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} className="cursor-pointer">
             <circle cx={X(p.x)} cy={Y(p.y)} r={p.r} fill={p.color} opacity={hov === null || hov === i ? .32 : .12} />
             <circle cx={X(p.x)} cy={Y(p.y)} r={hov === i ? 5 : 3.5} fill={p.color} />
-            {hov === i && <text x={X(p.x)} y={Y(p.y) - p.r - 6} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#111827" fontFamily="Inter">{p.label}</text>}
+            {hov === i && <text x={X(p.x)} y={Y(p.y) - p.r - 6} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#111827" fontFamily="Manrope">{p.label}</text>}
           </g>
         ))}
       </svg>
@@ -264,8 +264,8 @@ export function RussiaMap() {
             {hov === i && (
               <g>
                 <rect x={c.x - 58} y={c.y - 44} width="116" height="30" rx="7" fill="#111827" />
-                <text x={c.x} y={c.y - 31} textAnchor="middle" fontSize="11" fontWeight="700" fill="#fff" fontFamily="Inter">{c.name}</text>
-                <text x={c.x} y={c.y - 19} textAnchor="middle" fontSize="9.5" fill="#A5B4FC" fontFamily="Inter">{c.v}% аудитории</text>
+                <text x={c.x} y={c.y - 31} textAnchor="middle" fontSize="11" fontWeight="700" fill="#fff" fontFamily="Manrope">{c.name}</text>
+                <text x={c.x} y={c.y - 19} textAnchor="middle" fontSize="9.5" fill="#A5B4FC" fontFamily="Manrope">{c.v}% аудитории</text>
               </g>
             )}
           </g>

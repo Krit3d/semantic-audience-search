@@ -192,6 +192,24 @@ export interface CommunicationChannelItem {
 
 const TOKEN_KEY = 'creatorflow_token';
 const USER_KEY = 'creatorflow_user';
+const AUTH_COOKIE_NAME = 'cf_auth';
+const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+
+function authCookieDomain(): string {
+  const host = window.location.hostname;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || !host.includes('.')) return '';
+  const parts = host.split('.');
+  return '; Domain=.' + parts.slice(-2).join('.');
+}
+
+function setAuthCookie(): void {
+  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${AUTH_COOKIE_NAME}=1; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE}; SameSite=Lax${authCookieDomain()}${secure}`;
+}
+
+function clearAuthCookie(): void {
+  document.cookie = `${AUTH_COOKIE_NAME}=; Path=/; Max-Age=0${authCookieDomain()}`;
+}
 
 export interface BrandProduct {
   name: string;
@@ -470,6 +488,7 @@ export const api = {
     });
     localStorage.setItem(TOKEN_KEY, data.token);
     localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+    setAuthCookie();
     return data;
   },
 
@@ -480,6 +499,7 @@ export const api = {
     });
     localStorage.setItem(TOKEN_KEY, data.token);
     localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+    setAuthCookie();
     return data;
   },
 
@@ -627,16 +647,20 @@ export const api = {
   logout(): void {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    clearAuthCookie();
     window.dispatchEvent(new CustomEvent('creatorflow:logout'));
   },
 
   isAuthenticated(): boolean {
-    return Boolean(localStorage.getItem(TOKEN_KEY));
+    const authed = Boolean(localStorage.getItem(TOKEN_KEY));
+    if (authed) setAuthCookie();
+    return authed;
   },
 
   saveSession(token: string, user: Record<string, unknown>): void {
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
+    setAuthCookie();
   },
 
   updateUser(user: Record<string, unknown>): void {

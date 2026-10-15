@@ -73,19 +73,27 @@ function normalizeCountryCode(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function getUserSuffix() {
+const SESSION_VERSION = 1;
+const SESSION_KEY_PREFIX = "search:";
+const LEGACY_SESSION_PREFIX = "collabrama_session_";
+
+function decodeTokenUserId() {
   try {
-    const raw = localStorage.getItem("creatorflow_user");
-    if (raw) {
-      const user = JSON.parse(raw);
-      if (user && (user.id || user.email)) {
-        return String(user.id || user.email);
-      }
-    }
+    const token = localStorage.getItem("creatorflow_token");
+    if (!token) return null;
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    const id = payload ? payload.user_id : null;
+    if (id === null || id === undefined || String(id) === "") return null;
+    return String(id);
   } catch {
-    return "anonymous";
+    return null;
   }
-  return "anonymous";
+}
+
+function getUserSuffix() {
+  return decodeTokenUserId() || "anonymous";
 }
 
 export class AppStore {
@@ -125,6 +133,7 @@ export class AppStore {
     this.searchMode = "direct";
     this.shortlist = readStorage(this.getShortlistKey(), []);
     this._persistTimer = null;
+    this._userSuffix = getUserSuffix();
     this.restoreSession();
     return new Proxy(this, {
       set: (target, prop, value) => {
@@ -142,13 +151,18 @@ export class AppStore {
   }
 
   getSessionKey() {
-    return "collabrama_session_" + getUserSuffix();
+    return SESSION_KEY_PREFIX + getUserSuffix();
   }
 
   syncUserSession(clear) {
+    const currentSuffix = getUserSuffix();
+    const userChanged = this._userSuffix !== undefined && this._userSuffix !== currentSuffix;
+    if (clear || userChanged) {
+      this.clearAllSearchSessions();
+    }
+    this._userSuffix = currentSuffix;
     if (clear) {
       this.shortlist = [];
-      this.clearSession();
       this.resetAudienceState();
       this.brandDescription = "";
       this.searchQuery = "";
@@ -164,7 +178,11 @@ export class AppStore {
     for (const field of PERSISTED_FIELDS) {
       snapshot[field] = this[field];
     }
-    return snapshot;
+    return {
+      v: SESSION_VERSION,
+      userId: getUserSuffix(),
+      data: snapshot,
+    };
   }
 
   schedulePersist() {
@@ -186,14 +204,28 @@ export class AppStore {
   }
 
   restoreSession() {
-    let snapshot = null;
+    const key = this.getSessionKey();
+    let envelope = null;
     try {
-      const raw = sessionStorage.getItem(this.getSessionKey());
-      snapshot = raw ? JSON.parse(raw) : null;
+      const raw = sessionStorage.getItem(key);
+      envelope = raw ? JSON.parse(raw) : null;
     } catch {
-      snapshot = null;
+      envelope = null;
     }
-    if (!snapshot || typeof snapshot !== "object") return;
+    if (!envelope || typeof envelope !== "object") return;
+    if (
+      envelope.v !== SESSION_VERSION ||
+      envelope.userId !== getUserSuffix() ||
+      !envelope.data ||
+      typeof envelope.data !== "object"
+    ) {
+      try {
+        sessionStorage.removeItem(key);
+      } catch {
+      }
+      return;
+    }
+    const snapshot = envelope.data;
     for (const field of PERSISTED_FIELDS) {
       if (field in snapshot && snapshot[field] !== undefined) {
         this[field] = snapshot[field];
@@ -211,6 +243,23 @@ export class AppStore {
   clearSession() {
     try {
       sessionStorage.removeItem(this.getSessionKey());
+    } catch {
+      return;
+    }
+  }
+
+  clearAllSearchSessions() {
+    try {
+      const keys = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key && (key.startsWith(SESSION_KEY_PREFIX) || key.startsWith(LEGACY_SESSION_PREFIX))) {
+          keys.push(key);
+        }
+      }
+      for (const key of keys) {
+        sessionStorage.removeItem(key);
+      }
     } catch {
       return;
     }

@@ -13,6 +13,25 @@ function getCrmBaseUrl() {
   return normalized && normalized !== "__CRM_URL__" ? normalized : "/crm";
 }
 
+const AUTH_COOKIE_NAME = "cf_auth";
+const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+
+function authCookieDomain() {
+  const host = window.location.hostname;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || !host.includes(".")) return "";
+  const parts = host.split(".");
+  return "; Domain=." + parts.slice(-2).join(".");
+}
+
+function setAuthCookie() {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${AUTH_COOKIE_NAME}=1; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE}; SameSite=Lax${authCookieDomain()}${secure}`;
+}
+
+function clearAuthCookie() {
+  document.cookie = `${AUTH_COOKIE_NAME}=; Path=/; Max-Age=0${authCookieDomain()}`;
+}
+
 function getCrmLoginUrl() {
   return `${getCrmBaseUrl()}/#/login`;
 }
@@ -55,6 +74,7 @@ function handleAuthGuard() {
     const userEmail = params.get("user_email") || "";
     localStorage.setItem("creatorflow_token", sessionToken);
     localStorage.setItem("creatorflow_user", JSON.stringify({ id: String(userId), email: userEmail }));
+    setAuthCookie();
     params.delete("session_token");
     params.delete("user_id");
     params.delete("user_email");
@@ -65,8 +85,10 @@ function handleAuthGuard() {
     return true;
   }
   if (localStorage.getItem("creatorflow_token")) {
+    setAuthCookie();
     return true;
   }
+  clearAuthCookie();
   window.location.href = `${getCrmLoginUrl()}?redirect=${encodeURIComponent(window.location.href)}`;
   return false;
 }
@@ -76,6 +98,7 @@ const api = new SearchApiClient();
 
 window.addEventListener("collabrama:store_updated", () => render());
 window.addEventListener("creatorflow:logout", () => {
+  clearAuthCookie();
   store.syncUserSession(true);
   render();
 });
@@ -99,6 +122,7 @@ const authAllowed = handleAuthGuard();
 
 let progressTimer = null;
 let progressStep = 0;
+let lastSimilarIds = [];
 
 const TEXTAREA_MIN_HEIGHT = 80;
 const TEXTAREA_MAX_HEIGHT = 240;
@@ -248,10 +272,13 @@ function buildHeader() {
         <span class="brand-name">Collabrama</span>
       </button>
       <div class="header-actions">
-        <button class="header-icon-btn" data-action="go-search" title="Поиск авторов" aria-label="Поиск авторов">
+        <a class="header-icon-btn" href="/landing" title="О Collabrama — лендинг" aria-label="Перейти на лендинг">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c2.5 3 2.5 15 0 18M12 3c-2.5 3-2.5 15 0 18"></path></svg>
+        </a>
+        <button class="header-crm-link" data-action="go-search" title="Поиск авторов — вы здесь" aria-label="Поиск авторов">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
         </button>
-        <a class="header-crm-link" href="${escapeText(getCrmEntryUrl())}" title="Перейти в CreatorFlow" aria-label="Перейти в CreatorFlow">
+        <a class="header-icon-btn" href="${escapeText(getCrmEntryUrl())}" title="Перейти в CreatorFlow" aria-label="Перейти в CreatorFlow">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
         </a>
       </div>
@@ -755,6 +782,31 @@ function clearProgress() {
   if (progressEl) progressEl.innerHTML = "";
 }
 
+function renderErrorState(message, retryAction) {
+  const main = app.querySelector(".main");
+  const resultsEl = main ? main.querySelector("[data-results]") : null;
+  if (!resultsEl) return;
+  resultsEl.innerHTML = "";
+  const box = document.createElement("div");
+  box.className = "empty-state";
+  const title = document.createElement("div");
+  title.className = "empty-title";
+  title.textContent = "Не удалось выполнить поиск";
+  const text = document.createElement("div");
+  text.className = "empty-text";
+  text.textContent = message || "Произошла ошибка. Проверьте соединение и попробуйте ещё раз.";
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "btn-primary";
+  retry.style.marginTop = "14px";
+  retry.dataset.action = retryAction;
+  retry.textContent = "Повторить";
+  box.appendChild(title);
+  box.appendChild(text);
+  box.appendChild(retry);
+  resultsEl.appendChild(box);
+}
+
 async function runSearch() {
   const main = app.querySelector(".main");
   const audienceInput = main ? main.querySelector("[data-audience-input]") : null;
@@ -792,6 +844,7 @@ async function runSearch() {
     if (err.name === "AbortError") {
       return;
     }
+    renderErrorState(err.message, "retry-search");
     showToast(err.message || "Ошибка поиска", "error");
   }
 }
@@ -799,6 +852,7 @@ async function runSearch() {
 async function runSimilarSearch(ids) {
   const cleaned = Array.from(new Set(ids.map((s) => String(s).trim().replace(/^@/, "")).filter(Boolean))).slice(0, 50);
   if (cleaned.length === 0) return;
+  lastSimilarIds = cleaned;
   startProgress();
   try {
     const data = await api.searchSimilar(cleaned);
@@ -823,6 +877,7 @@ async function runSimilarSearch(ids) {
     if (err.name === "AbortError") {
       return;
     }
+    renderErrorState(err.message, "retry-similar");
     showToast(err.message || "Ошибка поиска похожих авторов", "error");
   }
 }
@@ -895,7 +950,7 @@ async function exportToCrm(accountIds) {
   }
   const authParams = getCrmAuthParams();
   const targetUrl = `${getCrmBaseUrl()}/${authParams ? `?${authParams}` : ""}#/authors?import_ids=${ids.join(",")}`;
-  window.open(targetUrl, "_blank");
+  window.location.href = targetUrl;
   showToast("Авторы экспортированы в CRM");
 }
 
@@ -952,6 +1007,10 @@ app.addEventListener("click", (e) => {
     render();
   } else if (action === "run-search") {
     runSearch();
+  } else if (action === "retry-search") {
+    runSearch();
+  } else if (action === "retry-similar") {
+    if (lastSimilarIds.length > 0) runSimilarSearch(lastSimilarIds);
   } else if (action === "analyze-brand") {
     analyzeBrandAction();
   } else if (action === "reset-audience") {

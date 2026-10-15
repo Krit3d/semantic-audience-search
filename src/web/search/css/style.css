@@ -10,7 +10,8 @@ body {
   background: #fafbff;
   color: #0a0b14;
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 16px;
+  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -87,7 +88,9 @@ select {
 }
 
 .app {
-  min-height: 100vh;
+  zoom: 1.08;
+  width: calc(100vw / 1.08);
+  min-height: calc(100vh / 1.08);
   background: #fafbff;
   position: relative;
   overflow-x: hidden;
@@ -1884,6 +1887,8 @@ select {
   width: 42px;
   height: 42px;
   border-radius: 13px;
+  border: none;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;

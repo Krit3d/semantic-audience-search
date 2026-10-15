@@ -558,7 +558,6 @@ class CreatorMessage(Base):
         BigInteger,
         ForeignKey("deals.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
     sender_type: Mapped[str] = mapped_column(String(20), nullable=False)
     channel_type: Mapped[str | None] = mapped_column(String(30), nullable=True)

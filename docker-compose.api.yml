@@ -8,9 +8,9 @@ services:
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD}
       NEO4J_PLUGINS: '["apoc"]'
-      NEO4J_server_memory_heap_initial__size: 2g
-      NEO4J_server_memory_heap_max__size: 4g
-      NEO4J_server_memory_pagecache_size: 4g
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1g
+      NEO4J_server_memory_pagecache_size: 1g
     ports:
       - "${INTERNAL_BIND_ADDR:-127.0.0.1}:7474:7474"
       - "${INTERNAL_BIND_ADDR:-127.0.0.1}:7687:7687"
@@ -41,7 +41,7 @@ services:
       resources:
         limits:
           cpus: "2"
-          memory: 12G
+          memory: 8G
     networks:
       - api_network
     logging:

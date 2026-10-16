@@ -173,11 +173,24 @@ class EmbeddingWorker:
             return list(result.scalars().all())
 
     async def _mark_content_embedded(self, content_ids: list[int]) -> None:
-        async with self.db.async_session() as session:
-            await session.execute(
-                update(Content).where(Content.id.in_(content_ids)).values(is_embedded=True)
-            )
-            await session.commit()
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                async with self.db.async_session() as session:
+                    await session.execute(
+                        update(Content).where(Content.id.in_(content_ids)).values(is_embedded=True)
+                    )
+                    await session.commit()
+                return
+            except TimeoutError as exc:
+                last_error = exc
+                wait = 2.0 * (attempt + 1)
+                logger.warning(
+                    "Timeout marking %d content items as embedded (attempt %d/3), retrying in %.1fs",
+                    len(content_ids), attempt + 1, wait,
+                )
+                await asyncio.sleep(wait)
+        raise last_error  # type: ignore[misc]
 
     def handle_shutdown(self, *args: object) -> None:
         logger.info("Shutdown signal received, finishing current sub-batch before exit")

@@ -109,6 +109,7 @@ services:
       ONNXRUNTIME_PROVIDER: ${ONNXRUNTIME_PROVIDER:-CPUExecutionProvider}
       EMBEDDING_CONCURRENCY: ${EMBEDDING_CONCURRENCY:-5}
       EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-64}
+      PROCESSING_BATCH_ID: "2"
     volumes:
       - fastembed_cache:/app/model_cache
     depends_on:
@@ -143,6 +144,7 @@ services:
       FASTEMBED_CACHE_PATH: /app/model_cache
       GRAPH_CONCURRENCY: ${GRAPH_CONCURRENCY:-15}
       GRAPH_BATCH_SIZE: ${GRAPH_BATCH_SIZE:-50}
+      PROCESSING_BATCH_ID: "2"
     volumes:
       - fastembed_cache:/app/model_cache
     depends_on:

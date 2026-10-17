@@ -255,10 +255,16 @@ async def bootstrap_graph(settings: Settings, db: Database, client: Neo4jClient)
                     "actor_elapsed_s": round(actor_elapsed, 2),
                 }
             finally:
-                await conn.execute(
-                    text("SELECT pg_advisory_unlock(:lock_id)"),
-                    {"lock_id": GRAPH_BOOTSTRAP_LOCK_ID},
-                )
+                try:
+                    await conn.execute(
+                        text("SELECT pg_advisory_unlock(:lock_id)"),
+                        {"lock_id": GRAPH_BOOTSTRAP_LOCK_ID},
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "pg_advisory_unlock failed (%s); the lock is released with the session anyway",
+                        exc,
+                    )
 
     for _ in range(120):
         await asyncio.sleep(1.0)

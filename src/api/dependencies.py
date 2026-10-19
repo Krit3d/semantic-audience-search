@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import func, select
@@ -17,6 +18,7 @@ from src.embeddings.qdrant_service import QdrantService
 from src.graph.client import Neo4jClient
 from src.graph.search_repo import Neo4jSearchRepository
 from src.utils.security import decode_access_token
+from src.utils.billing import has_access
 
 
 def get_db(request: Request) -> Database:
@@ -117,5 +119,22 @@ async def require_admin(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Доступ разрешён только администраторам",
+        )
+    return current_user
+
+
+async def require_subscription(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.is_admin:
+        return current_user
+    now = datetime.now(timezone.utc)
+    expires_at = current_user.subscription_expires_at
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if not has_access(current_user.subscription_status, expires_at, now):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Подписка не активна. Оплатите доступ, чтобы продолжить работу.",
         )
     return current_user

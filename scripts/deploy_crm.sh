@@ -111,4 +111,7 @@ docker compose -p telethon-crm -f "$COMPOSE_FILE" ps
 docker image prune -f
 EOF
 
+echo "Refreshing gateway nginx upstream DNS..."
+ssh "$SSH_USER@$SSH_HOST" 'if docker ps --format "{{.Names}}" | grep -q "^gateway$"; then if docker exec gateway nginx -t 2>/dev/null; then docker exec gateway nginx -s reload && echo "Gateway nginx reloaded"; else echo "Warning: gateway nginx config test failed, skipping reload"; fi; else echo "Note: gateway container not found on this host, skipping reload"; fi' || echo "Warning: gateway reload step failed (deploy itself is fine)"
+
 echo "CRM deployment completed successfully!"

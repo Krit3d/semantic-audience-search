@@ -15,9 +15,9 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import RedirectResponse, Response
 
-from src.api.routers import search, health, crm, support
+from src.api.routers import search, health, crm, support, billing
 from src.api.services.crm_client import TwentyCrmClient
 from src.config.config import MEDIA_DIR, load_settings
 from src.db.database import Database
@@ -209,6 +209,7 @@ app.include_router(health.router, prefix="/api/v1/health")
 app.include_router(search.router, prefix="/api/v1/search")
 app.include_router(crm.router, prefix="/api/v1")
 app.include_router(support.router, prefix="/api/v1")
+app.include_router(billing.router, prefix="/api/v1")
 
 
 def _render_search_index(settings) -> HTMLResponse:
@@ -280,6 +281,32 @@ if LANDING_ASSETS_DIR.exists():
         StaticFiles(directory=str(LANDING_ASSETS_DIR)),
         name="landing-assets",
     )
+
+LEGAL_DIR = Path(__file__).resolve().parent.parent / "web" / "legal"
+if LEGAL_DIR.exists():
+    app.mount(
+        "/legal",
+        NoCacheStaticFiles(directory=str(LEGAL_DIR), html=True),
+        name="legal",
+    )
+
+LEGAL_REDIRECTS = {
+    "/privacy": "/legal/privacy.html",
+    "/offer": "/legal/offer.html",
+    "/pricing": "/legal/offer.html",
+    "/terms": "/legal/offer.html",
+    "/aup": "/legal/aup.html",
+    "/cookies": "/legal/cookie.html",
+    "/cookie": "/legal/cookie.html",
+}
+
+
+@app.get("/{alias}", include_in_schema=False)
+async def legal_alias(alias: str) -> Response:
+    target = LEGAL_REDIRECTS.get(f"/{alias}")
+    if target is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return RedirectResponse(url=target, status_code=302)
 
 @app.get("/media/{filename}")
 async def get_media(filename: str, request: Request) -> Response:

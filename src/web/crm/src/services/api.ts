@@ -413,6 +413,17 @@ export function resolveMediaUrl(path?: string | null): string {
   return normalizedPath;
 }
 
+export interface SubscriptionPlanItem {
+  id: number;
+  name: string;
+  price: string | null;
+  period_days: number;
+  is_active: boolean;
+  is_custom: boolean;
+  limits: Record<string, number>;
+  features: Record<string, boolean>;
+}
+
 class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -429,6 +440,10 @@ async function request<T>(path: string, init: RequestInit = {}, baseUrl: string 
     api.logout();
     window.dispatchEvent(new CustomEvent('creatorflow:auth_expired'));
     throw new ApiError('Сессия истекла. Пожалуйста, войдите снова.', 401);
+  }
+  if (response.status === 402) {
+    window.dispatchEvent(new CustomEvent('creatorflow:subscription_required'));
+    throw new ApiError('Подписка не активна', 402);
   }
   if (!response.ok) {
     let detail = `Ошибка запроса (${response.status})`;
@@ -481,6 +496,15 @@ function getStoredUser(): Record<string, unknown> | null {
 }
 
 export const api = {
+  async getPlans(): Promise<SubscriptionPlanItem[]> {
+    return request<SubscriptionPlanItem[]>('/billing/plans', {}, ROOT_API_URL);
+  },
+
+  async getCheckoutUrl(plan: string): Promise<string> {
+    const data = await request<{ url: string }>(`/billing/checkout-url?plan=${encodeURIComponent(plan)}`, {}, ROOT_API_URL);
+    return data.url;
+  },
+
   async login(email: string, password: string): Promise<LoginResponse> {
     const data = await request<LoginResponse>('/auth/login', {
       method: 'POST',

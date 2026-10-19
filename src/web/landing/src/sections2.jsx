@@ -268,15 +268,68 @@ const FAQSection = () => {
 };
 
 // — Section 17: Footer —
+const LEGAL_LINKS = [
+  { href: "/legal/offer.html", label: "Публичная оферта" },
+  { href: "/legal/privacy.html", label: "Политика обработки ПДн" },
+  { href: "/legal/aup.html", label: "Политика использования сервиса" },
+  { href: "/legal/cookie.html", label: "Уведомление о cookie" },
+];
+
 const Footer = ({ onSearch }) => (
   <footer className="relative mt-10 border-t border-ink-100 bg-white/60">
     <div className="max-w-[1200px] mx-auto px-5 sm:px-8 py-8 flex flex-wrap items-center justify-between gap-3">
       <p className="text-[13px] leading-relaxed text-ink-600 max-w-[560px] text-pretty">
         AI-система для поиска авторов контента, массовых переговоров и управления influencer-кампаниями.
       </p>
-      <div className="text-[12.5px] text-ink-500">© 2026 Collabrama</div>
+      <div className="text-[12.5px] text-ink-500">© 2026 Collabrama · 12+</div>
+    </div>
+    <div className="max-w-[1200px] mx-auto px-5 sm:px-8 pb-6 flex flex-wrap gap-x-5 gap-y-2">
+      {LEGAL_LINKS.map((l) => (
+        <a key={l.href} href={l.href} className="text-[12.5px] text-ink-500 underline decoration-ink-200 underline-offset-2 hover:text-ink-800 transition-colors">
+          {l.label}
+        </a>
+      ))}
+    </div>
+    <div className="max-w-[1200px] mx-auto px-5 sm:px-8 pb-8 text-[11.5px] leading-relaxed text-ink-400">
+      ИП Глушакова Марина Сергеевна · ИНН 672608517020 · ОГРНИП 326774600410105 ·{" "}
+      <a href="mailto:info@collabrama.ru" className="underline underline-offset-2 hover:text-ink-600">info@collabrama.ru</a>
     </div>
   </footer>
 );
 
-export { AudienceSection, UseCasesSection, CompareSection, VisionSection, ObjectionsSection, FinalCTASection, FAQSection, Footer };
+const COOKIE_KEY = "cf_cookie_accepted";
+
+const CookieBanner = () => {
+  const [visible, setVisible] = React.useState(() => {
+    try {
+      return !localStorage.getItem(COOKIE_KEY);
+    } catch {
+      return true;
+    }
+  });
+  if (!visible) return null;
+  const accept = () => {
+    try {
+      localStorage.setItem(COOKIE_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    setVisible(false);
+  };
+  return (
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-[640px] w-[calc(100%-32px)] rounded-2xl border border-ink-100 bg-white shadow-xl px-5 py-4 flex flex-wrap items-center gap-3">
+      <p className="text-[12.5px] leading-relaxed text-ink-600 flex-1 min-w-[240px]">
+        Мы используем cookie для работы сайта и аналитики. Продолжая пользоваться сайтом, вы соглашаетесь с{" "}
+        <a href="/legal/cookie.html" className="underline underline-offset-2 text-ink-800">уведомлением об использовании cookie</a>.
+      </p>
+      <button
+        onClick={accept}
+        className="px-4 h-9 rounded-lg bg-ink-900 text-white text-[13px] font-semibold hover:bg-ink-700 transition-colors"
+      >
+        Принять
+      </button>
+    </div>
+  );
+};
+
+export { AudienceSection, UseCasesSection, CompareSection, VisionSection, ObjectionsSection, FinalCTASection, FAQSection, Footer, CookieBanner };

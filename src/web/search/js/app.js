@@ -263,6 +263,20 @@ function autoResizeTextarea(el) {
   el.style.overflowY = next >= TEXTAREA_MAX_HEIGHT ? "auto" : "hidden";
 }
 
+function buildLegalFooter() {
+  const footer = document.createElement("footer");
+  footer.className = "legal-footer";
+  footer.innerHTML = `
+    <div class="legal-footer-links">
+      <a href="/legal/offer.html" target="_blank" rel="noopener">Публичная оферта</a>
+      <a href="/legal/privacy.html" target="_blank" rel="noopener">Политика обработки ПДн</a>
+      <a href="/legal/aup.html" target="_blank" rel="noopener">Политика использования сервиса</a>
+      <a href="/legal/cookie.html" target="_blank" rel="noopener">Уведомление о cookie</a>
+    </div>
+    <div class="legal-footer-owner">ИП Глушакова Марина Сергеевна · ИНН 672608517020 · ОГРНИП 326774600410105 · <a href="mailto:info@collabrama.ru">info@collabrama.ru</a> · 12+</div>`;
+  return footer;
+}
+
 function buildHeader() {
   const header = document.createElement("header");
   header.className = "header";
@@ -567,6 +581,9 @@ function render() {
 
   const tab = buildSearchTab();
   main.appendChild(tab);
+  const oldFooter = app.querySelector(".legal-footer");
+  if (oldFooter) oldFooter.remove();
+  app.appendChild(buildLegalFooter());
   const brandInput = tab.querySelector("[data-search-input]");
   if (brandInput) {
     brandInput.addEventListener("keydown", (e) => {

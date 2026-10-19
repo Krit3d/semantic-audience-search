@@ -3,6 +3,7 @@ SQLAlchemy models for accounts, content, and comments tables.
 """
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -16,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     Integer,
+    Numeric,
     DateTime,
     UniqueConstraint,
     func,
@@ -449,6 +451,26 @@ class User(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    subscription_status: Mapped[str] = mapped_column(
+        String(20),
+        default="trial",
+        server_default="trial",
+        nullable=False,
+    )
+    subscription_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    gateway_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    billing_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    billing_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    plan_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("subscription_plans.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    plan: Mapped["SubscriptionPlan | None"] = relationship()
 
     messages: Mapped[list["CreatorMessage"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -989,3 +1011,80 @@ class DiscoveryQuery(Base):
 
     def __repr__(self) -> str:
         return f"<DiscoveryQuery(platform={self.platform}, source={self.source}, query={self.query_text!r}, exhausted={self.exhausted})>"
+
+
+class SubscriptionPlan(Base):
+    __tablename__ = "subscription_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    period_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    prodamus_plan_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+    payment_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
+        nullable=False,
+    )
+    is_custom: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
+    limits: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    features: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<SubscriptionPlan(id={self.id}, name={self.name}, price={self.price})>"
+
+
+class PaymentEvent(Base):
+    __tablename__ = "payment_events"
+    __table_args__ = (
+        Index("uq_payment_events_event_key", "event_key", unique=True),
+        Index("ix_payment_events_user_id", "user_id"),
+        Index("ix_payment_events_received_at", "received_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User | None"] = relationship()
+
+    def __repr__(self) -> str:
+        return f"<PaymentEvent(id={self.id}, event_type={self.event_type}, user_id={self.user_id})>"

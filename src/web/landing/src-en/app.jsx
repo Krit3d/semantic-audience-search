@@ -1,7 +1,7 @@
 import React from "react";
 import { Header, Hero, SearchModal } from "./hero.jsx";
 import { PainSection, SolutionSection, SemanticSection } from "./sections.jsx";
-import { AudienceSection, UseCasesSection, ObjectionsSection, FinalCTASection, Footer } from "./sections2.jsx";
+import { AudienceSection, UseCasesSection, ObjectionsSection, FinalCTASection, Footer, CookieBanner } from "./sections2.jsx";
 // Main app: wires sections + search modal + Tweaks panel.
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
@@ -56,6 +56,7 @@ function App() {
         <FinalCTASection onSearch={openSearch} />
       </main>
       <Footer onSearch={() => openSearch()} />
+      <CookieBanner />
 
       <SearchModal open={searchOpen} query={query} onClose={() => setSearchOpen(false)} />
 

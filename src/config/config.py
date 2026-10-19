@@ -496,6 +496,23 @@ class Settings(BaseSettings):
     bridgit_base_url: str = Field(default="https://app.bridgit.me/api/public/v3", description="Bridgit API base URL")
     bridgit_poll_interval_s: int = Field(default=15, description="Poll interval in seconds for Bridgit delivery stats verification")
 
+    # ---- Billing (CloudPayments) settings ----
+    cloudpayments_secret_key: str | None = Field(
+        default=None,
+        validation_alias="CLOUDPAYMENTS_SECRET_KEY",
+        description="CloudPayments API secret for webhook Content-HMAC verification",
+    )
+    min_subscription_amount: int = Field(
+        default=790000,
+        validation_alias="MIN_SUBSCRIPTION_AMOUNT",
+        description="Minimum payment amount in kopecks that activates a subscription",
+    )
+    subscription_period_days: int = Field(
+        default=31,
+        validation_alias="SUBSCRIPTION_PERIOD_DAYS",
+        description="Fallback subscription extension period in days when plan is unknown",
+    )
+
     # ---- Channel sourcing ----
     channels_file: Path = Field(
         default=Path("channels.txt"),

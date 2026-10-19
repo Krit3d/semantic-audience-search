@@ -16,6 +16,7 @@ import SettingsScreen from './screens/settings/SettingsScreen';
 import AnalyticsScreen from './screens/analytics/AnalyticsScreen';
 import Tickets from './screens/Tickets';
 import CommsScreen from './screens/comms/CommsScreen';
+import PaywallScreen from './screens/PaywallScreen';
 
 type Screen = 'kanban' | 'deals' | 'authors' | 'author' | 'comms' | 'settings' | 'brand' | 'analytics' | 'tickets';
 
@@ -502,6 +503,13 @@ export default function App() {
     return api.getCurrentUser();
   });
   const [authed, setAuthed] = useState<boolean>(() => api.isAuthenticated());
+  const [paywall, setPaywall] = useState<boolean>(false);
+
+  useEffect(() => {
+    const onSubscriptionRequired = () => setPaywall(true);
+    window.addEventListener('creatorflow:subscription_required', onSubscriptionRequired);
+    return () => window.removeEventListener('creatorflow:subscription_required', onSubscriptionRequired);
+  }, []);
 
   useEffect(() => {
     if (!api.isAuthenticated()) return;
@@ -551,7 +559,7 @@ export default function App() {
 
   return (
     <ToastProvider>
-      {authed ? <Shell key={String(user?.id ?? user?.email ?? 'guest')} user={user} onLogout={handleLogout} /> : <LoginModal onLogin={handleLogin} />}
+      {authed ? (paywall ? <PaywallScreen /> : <Shell key={String(user?.id ?? user?.email ?? 'guest')} user={user} onLogout={handleLogout} />) : <LoginModal onLogin={handleLogin} />}
     </ToastProvider>
   );
 }

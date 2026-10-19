@@ -24,6 +24,8 @@ export default function LoginModal({ onLogin }: { onLogin: (user: Record<string,
   const [show, setShow] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [consentPdn, setConsentPdn] = useState(false);
+  const [consentAds, setConsentAds] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -34,6 +36,10 @@ export default function LoginModal({ onLogin }: { onLogin: (user: Record<string,
     }
     if (mode === 'register' && password.length < 6) {
       setError('Пароль должен содержать не менее 6 символов');
+      return;
+    }
+    if (mode === 'register' && !consentPdn) {
+      setError('Для регистрации необходимо согласие на обработку персональных данных');
       return;
     }
     setBusy(true);
@@ -118,6 +124,32 @@ export default function LoginModal({ onLogin }: { onLogin: (user: Record<string,
 
             {mode === 'register' && (
               <p className="text-[11px] font-medium text-gray-400">Пароль должен содержать не менее 6 символов</p>
+            )}
+
+            {mode === 'register' && (
+              <div className="flex flex-col gap-2.5">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={consentPdn} onChange={e => { setConsentPdn(e.target.checked); setError(''); }}
+                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  <span className="text-[12px] font-medium text-gray-500 leading-snug">
+                    Я даю{' '}
+                    <a href="/legal/consent-pdn.html" target="_blank" rel="noopener" className="text-indigo-600 underline underline-offset-2">согласие на обработку персональных данных</a>
+                    {' '}и принимаю{' '}
+                    <a href="/legal/privacy.html" target="_blank" rel="noopener" className="text-indigo-600 underline underline-offset-2">Политику обработки ПДн</a>
+                    {' '}и{' '}
+                    <a href="/legal/offer.html" target="_blank" rel="noopener" className="text-indigo-600 underline underline-offset-2">Публичную оферту</a>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={consentAds} onChange={e => setConsentAds(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  <span className="text-[12px] font-medium text-gray-500 leading-snug">
+                    Я даю{' '}
+                    <a href="/legal/consent-ads.html" target="_blank" rel="noopener" className="text-indigo-600 underline underline-offset-2">согласие на получение рекламных и информационных рассылок</a>
+                    {' '}(необязательно)
+                  </span>
+                </label>
+              </div>
             )}
 
             {error && (

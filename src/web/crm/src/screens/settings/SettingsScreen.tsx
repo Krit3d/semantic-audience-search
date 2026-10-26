@@ -1,4 +1,4 @@
-import { Archive, Building2, Check, ChevronDown, Download, Plus, Search, ShieldAlert, ShieldCheck, Upload, Users, X } from 'lucide-react';
+import { Archive, Building2, Check, ChevronDown, ChevronRight, CreditCard, Download, Plus, Search, ShieldAlert, ShieldCheck, Upload, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Empty, ErrorState, Select, SkeletonLines } from '../../components/kit';
 import { Avatar, Btn, Modal, SidePanel, useToast } from '../../components/ui';
@@ -10,7 +10,9 @@ import { userName, api,
   type EridRecord,
   type PublicationItem,
   type ShortlistItem,
+  type SubscriptionStatusInfo,
 } from '../../services/api';
+import { planTitle } from '../pricing/planMeta';
 import type { Social } from '../../data';
 
 type Section = 'brands' | 'authors' | 'erid';
@@ -225,6 +227,8 @@ export default function SettingsScreen({ user, onOpenBrand }: {
           </div>
         </section>
 
+        <SubscriptionCard />
+
         <div className="mt-2">
           <h2 className="text-[18px] font-collab font-semibold text-ink">Настройки бренда</h2>
           <p className="text-[12.5px] font-medium text-muted mt-1">Клиенты и бренды, общая база авторов и маркировка рекламы</p>
@@ -286,6 +290,58 @@ export default function SettingsScreen({ user, onOpenBrand }: {
         />
       )}
     </div>
+  );
+}
+
+function SubscriptionCard() {
+  const [sub, setSub] = useState<SubscriptionStatusInfo | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    api.getSubscription()
+      .then(setSub)
+      .catch(() => setFailed(true));
+  }, []);
+
+  const fmtDate = (iso: string | null): string => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+
+  let badge: { label: string; cls: string };
+  if (sub?.is_active) badge = { label: 'Активна', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  else if (sub?.status === 'trial') badge = { label: 'Триал', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+  else if (sub?.expires_at) badge = { label: 'Истекла', cls: 'bg-red-50 text-red-600 border-red-200' };
+  else badge = { label: 'Не оформлена', cls: 'bg-gray-100 text-gray-500 border-line' };
+
+  return (
+    <section aria-label="Подписка" className="flex flex-wrap items-center gap-4 px-4 py-3.5 rounded-2xl bg-white border border-line">
+      <span className="w-12 h-12 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
+        <CreditCard size={20} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[15px] font-extrabold text-ink">Подписка</span>
+          {sub && <span className={`px-2 h-5.5 inline-flex items-center rounded-full border text-[11px] font-bold ${badge.cls}`}>{badge.label}</span>}
+        </div>
+        <div className="text-[13px] text-muted mt-0.5">
+          {failed && 'Не удалось загрузить статус подписки'}
+          {!failed && !sub && 'Загружаем статус…'}
+          {sub && (
+            <>
+              {sub.plan ? `Тариф «${planTitle(sub.plan.name)}»` : sub.status === 'trial' ? 'Тариф «Триал»' : 'Тариф не выбран'}
+              {sub.is_active && sub.expires_at && ` · действует до ${fmtDate(sub.expires_at)}`}
+              {!sub.is_active && sub.expires_at && ` · истекла ${fmtDate(sub.expires_at)}`}
+              {sub.is_active && sub.auto_renew && ' · автопродление включено'}
+            </>
+          )}
+        </div>
+      </div>
+      <Btn variant="ghost" onClick={() => { window.location.hash = '#/pricing'; }}>
+        Тарифы и условия<ChevronRight size={14} />
+      </Btn>
+    </section>
   );
 }
 

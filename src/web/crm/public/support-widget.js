@@ -161,6 +161,8 @@
 
     function openWidget() {
       if (state.open) return;
+      // Контейнер может быть скрыт (кнопка-поплавок выключена в CRM) — показываем его при открытии панели.
+      wrap.style.display = "";
       state.open = true;
       button.classList.add("cf-sup-open");
       button.setAttribute("aria-expanded", "true");
@@ -176,6 +178,7 @@
       button.innerHTML = HEADSET_SVG;
       if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
       panel = null;
+      if (isDockedToSidebar() && getToken()) wrap.style.display = "none";
       button.focus();
     }
 

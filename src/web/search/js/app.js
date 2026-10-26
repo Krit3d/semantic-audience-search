@@ -54,6 +54,57 @@ function getCrmEntryUrl() {
   return `${getCrmBaseUrl()}/${authParams ? `?${authParams}` : ""}`;
 }
 
+function getCrmPricingUrl() {
+  return `${getCrmBaseUrl()}/#/pricing`;
+}
+
+const SUBSCRIPTION_PLAN_TITLES = { trial: "Триал", basic: "Базовый", pro: "Pro", enterprise: "Enterprise" };
+let subscriptionCache = { at: 0, value: null };
+
+async function fetchActiveSubscription() {
+  const token = localStorage.getItem("creatorflow_token");
+  if (!token) return null;
+  if (Date.now() - subscriptionCache.at < 5 * 60 * 1000) return subscriptionCache.value;
+  try {
+    const res = await fetch("/api/v1/billing/subscription", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("bad status");
+    const sub = await res.json();
+    const value = sub && sub.is_active ? sub : null;
+    subscriptionCache = { at: Date.now(), value };
+    return value;
+  } catch {
+    subscriptionCache = { at: Date.now(), value: null };
+    return null;
+  }
+}
+
+function fillSubscriptionBadge(rootEl) {
+  const slot = rootEl.querySelector("[data-subscription-badge]");
+  if (!slot) return;
+  fetchActiveSubscription().then((sub) => {
+    const target = rootEl.querySelector("[data-subscription-badge]");
+    if (!target) return;
+    if (!sub) {
+      target.remove();
+      return;
+    }
+    const planName = sub.plan ? (SUBSCRIPTION_PLAN_TITLES[sub.plan.name] || sub.plan.name) : "Активна";
+    let expiresLabel = "";
+    if (sub.expires_at) {
+      const d = new Date(sub.expires_at);
+      if (!Number.isNaN(d.getTime())) expiresLabel = d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+    }
+    const badge = document.createElement("a");
+    badge.className = "subscription-badge";
+    badge.href = getCrmPricingUrl();
+    badge.title = "Подписка активна — открыть тарифы и условия";
+    badge.innerHTML = `<span class="subscription-badge-dot"></span>${escapeText(planName)}${expiresLabel ? ` · до ${escapeText(expiresLabel)}` : ""}`;
+    target.replaceWith(badge);
+  });
+}
+
 function consumeSimilarParam() {
   const params = new URLSearchParams(window.location.search);
   const raw = params.get("similar");
@@ -268,10 +319,12 @@ function buildLegalFooter() {
   footer.className = "legal-footer";
   footer.innerHTML = `
     <div class="legal-footer-links">
+      <a href="/pricing">Тарифы и подписка</a>
       <a href="/legal/offer.html" target="_blank" rel="noopener">Публичная оферта</a>
       <a href="/legal/privacy.html" target="_blank" rel="noopener">Политика обработки ПДн</a>
       <a href="/legal/aup.html" target="_blank" rel="noopener">Политика использования сервиса</a>
       <a href="/legal/cookie.html" target="_blank" rel="noopener">Уведомление о cookie</a>
+      <button type="button" class="legal-footer-link-btn" onclick="window.cfCookieSettings && window.cfCookieSettings()">Настройки cookie</button>
     </div>
     <div class="legal-footer-owner">ИП Глушакова Марина Сергеевна · ИНН 672608517020 · ОГРНИП 326774600410105 · <a href="mailto:info@collabrama.ru">info@collabrama.ru</a> · 12+</div>`;
   return footer;
@@ -286,6 +339,7 @@ function buildHeader() {
         <span class="brand-name">Collabrama</span>
       </button>
       <div class="header-actions">
+        <span data-subscription-badge></span>
         <a class="header-icon-btn" href="/landing" title="О Collabrama — лендинг" aria-label="Перейти на лендинг">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c2.5 3 2.5 15 0 18M12 3c-2.5 3-2.5 15 0 18"></path></svg>
         </a>
@@ -575,6 +629,7 @@ function render() {
   const header = app.querySelector(".header");
   if (header) header.remove();
   app.prepend(buildHeader());
+  fillSubscriptionBadge(app);
 
   main.innerHTML = "";
   renderDock();

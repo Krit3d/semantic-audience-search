@@ -27,11 +27,11 @@ const Section = ({ id, className = '', children, bleed = false }) =>
 const PainSection = () => {
   const items = [
   { i: <I.Clock size={16} />, title: 'Search takes hours',
-    text: 'Creators are found through Telegram channels, referrals, old spreadsheets, social search and endless manual scrolling.' },
+    text: 'Creators are found through referrals, old spreadsheets, manual social search and endless scrolling.' },
   { i: <I.Eye size={16} />, title: 'Selection is subjective',
     text: 'Picks are made by the cover (category / follower count) rather than by the meaning of the content.' },
   { i: <I.Chat size={16} />, title: 'Conversations scatter',
-    text: 'Telegram, Instagram, email, notes and spreadsheets quickly turn a campaign into chaos.' },
+    text: 'Messengers, email, notes and spreadsheets quickly turn a campaign into chaos.' },
   { i: <I.Sparkle size={16} />, title: 'Follow-ups get forgotten',
     text: 'You have to remember who to ping again, who asked for a brief, who named a price, who went quiet and who to nudge.' },
   { i: <I.Coin size={16} />, title: 'Terms are hard to compare',

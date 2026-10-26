@@ -2,6 +2,8 @@ import React from "react";
 import { Header, Hero, SearchModal } from "./hero.jsx";
 import { PainSection, SolutionSection, SemanticSection } from "./sections.jsx";
 import { AudienceSection, UseCasesSection, ObjectionsSection, FinalCTASection, Footer, CookieBanner } from "./sections2.jsx";
+import PricingPage from "./pricing.jsx";
+import { AboutPage, ContactsPage } from "./static-pages.jsx";
 // Main app: wires sections + search modal + Tweaks panel.
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
@@ -21,6 +23,9 @@ function App() {
   const tweaks = TWEAK_DEFAULTS;
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const isPricingPage = window.location.pathname === "/pricing";
+  const path = window.location.pathname;
+  const staticPage = path === "/about" ? <AboutPage /> : path === "/contacts" ? <ContactsPage /> : null;
 
   // apply palette via CSS vars
   React.useEffect(() => {
@@ -44,18 +49,24 @@ function App() {
 
   return (
     <>
-      <Header onSearch={() => openSearch()} />
-      <main>
-        <Hero onSearch={openSearch} />
-        <AudienceSection />
-        <PainSection />
-        <SolutionSection />
-        <SemanticSection />
-        <UseCasesSection />
-        <ObjectionsSection />
-        <FinalCTASection onSearch={openSearch} />
-      </main>
-      <Footer onSearch={() => openSearch()} />
+      {staticPage ? staticPage : isPricingPage ? (
+        <PricingPage />
+      ) : (
+        <>
+          <Header onSearch={() => openSearch()} />
+          <main>
+            <Hero onSearch={openSearch} />
+            <AudienceSection />
+            <PainSection />
+            <SolutionSection />
+            <SemanticSection />
+            <UseCasesSection />
+            <ObjectionsSection />
+            <FinalCTASection onSearch={openSearch} />
+          </main>
+          <Footer onSearch={() => openSearch()} />
+        </>
+      )}
       <CookieBanner />
 
       <SearchModal open={searchOpen} query={query} onClose={() => setSearchOpen(false)} />

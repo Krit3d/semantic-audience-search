@@ -2,7 +2,26 @@ import React from "react";
 import { I } from "./icons.jsx";
 import { HeroProductMockup } from "./mockups.jsx";
 import { getCrmLoginUrl, isAuthenticated } from "./auth.js";
+import { fetchActiveSubscription, getCrmPricingUrl } from "./subscription.js";
 // Header + Hero with interactive search → loading → results.
+
+const SubscriptionBadge = () => {
+  const [sub, setSub] = React.useState(null);
+  React.useEffect(() => {
+    let active = true;
+    fetchActiveSubscription().then((s) => { if (active) setSub(s); });
+    return () => { active = false; };
+  }, []);
+  if (!sub) return null;
+  return (
+    <a href={getCrmPricingUrl()}
+       title="Подписка активна — открыть тарифы и условия"
+       className="hidden sm:inline-flex items-center gap-1.5 text-[12px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5 hover:bg-emerald-100 transition-colors">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/>
+      {sub.title}{sub.expiresLabel ? ` · до ${sub.expiresLabel}` : ""}
+    </a>
+  );
+};
 
 const Header = ({ onSearch }) => {
   const links = [
@@ -11,6 +30,7 @@ const Header = ({ onSearch }) => {
     ['Для кого', '#audience'],
   ];
   const [scrolled, setScrolled] = React.useState(false);
+  const authed = isAuthenticated();
   React.useEffect(() => {
     const on = () => setScrolled(window.scrollY > 4);
     on();
@@ -26,11 +46,14 @@ const Header = ({ onSearch }) => {
         </a>
         <nav className="hidden md:flex items-center gap-1 ml-2"></nav>
         <div className="ml-auto flex items-center gap-2">
-          {isAuthenticated() ? (
-            <a href="/"
-               className="btn-primary inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-4 py-1.5">
-              Открыть приложение <I.Arrow size={13} />
-            </a>
+          {authed ? (
+            <>
+              <SubscriptionBadge />
+              <a href="/"
+                 className="btn-primary inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-4 py-1.5">
+                Открыть приложение <I.Arrow size={13} />
+              </a>
+            </>
           ) : (
             <>
               <a href={getCrmLoginUrl()}
@@ -39,7 +62,7 @@ const Header = ({ onSearch }) => {
               </a>
               <a href={getCrmLoginUrl()}
                  className="btn-primary inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-4 py-1.5">
-                Регистрация
+                Попробовать
               </a>
             </>
           )}
@@ -120,9 +143,9 @@ const SearchBox = ({
             <span className="mono-mini">{label}</span>
           </div>
           <div className="hidden sm:flex items-center gap-2">
-            <span className="chip" style={{padding:'2px 8px', fontSize:11}}><I.Telegram size={11}/> Telegram</span>
-            <span className="chip" style={{padding:'2px 8px', fontSize:11}}><I.Instagram size={11}/> Instagram</span>
-            <span className="chip" style={{padding:'2px 8px', fontSize:11}}><I.Tiktok size={11}/> TikTok</span>
+            <span className="chip" style={{padding:'2px 8px', fontSize:11}}>Видео</span>
+            <span className="chip" style={{padding:'2px 8px', fontSize:11}}>Каналы</span>
+            <span className="chip" style={{padding:'2px 8px', fontSize:11}}>Посты</span>
           </div>
         </div>
         <div className="flex items-start gap-2 px-2 pt-1 pb-2">
@@ -166,7 +189,7 @@ const SearchBox = ({
 };
 
 const Hero = ({ onSearch }) => {
-  const placeholder = "Например: Бренд уходовой косметики для чувствительной кожи, продаёмся на Wildberries. Нужны авторы, которые реально говорят про уход и составы, а не просто beauty. Аудитория — женщины 25–40, RU/СНГ. Telegram и TikTok. Формат — честный обзор с демонстрацией текстуры. Tone of voice — спокойный, без агрессивных продаж. Бюджет — до 50 000 ₽ или бартер + промокод.";
+  const placeholder = "Например: Бренд уходовой косметики для чувствительной кожи, продаёмся на Wildberries. Нужны авторы, которые реально говорят про уход и составы, а не просто beauty. Аудитория — женщины 25–40, RU/СНГ. Формат — честный обзор с демонстрацией текстуры. Tone of voice — спокойный, без агрессивных продаж. Бюджет — до 50 000 ₽ или бартер + промокод.";
   return (
     <section id="top" className="relative overflow-hidden">
       <div className="aurora"/>
@@ -195,8 +218,8 @@ const Hero = ({ onSearch }) => {
             Умный подбор авторов <span className="grad-text">на основе анализа контента</span>
           </h1>
           <p className="mt-5 text-[16.5px] sm:text-[18px] leading-relaxed text-ink-600 max-w-[620px] text-pretty">
-            Опишите свою задачу — Collabrama найдёт всех релевантных авторов в Telegram,
-            Instagram и TikTok, с учётом того, о чём и как они говорят.
+            Опишите свою задачу — Collabrama найдёт релевантных авторов контента
+            с учётом того, о чём и как они говорят.
           </p>
 
           <div className="mt-7">

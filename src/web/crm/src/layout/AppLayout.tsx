@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
-import { KanbanSquare, MessageCircle, BarChart3, Users, LifeBuoy, LogOut, Search, Plus, ChevronRight, Zap, Globe } from 'lucide-react';
+import { KanbanSquare, MessageCircle, BarChart3, Users, LifeBuoy, LogOut, Search, Plus, ChevronRight, Zap, Globe, CreditCard, Cookie } from 'lucide-react';
 import { userName } from '../services/api';
 
-export type NavId = 'deals' | 'comms' | 'analytics' | 'base' | 'settings' | 'tickets';
+export type NavId = 'deals' | 'comms' | 'analytics' | 'base' | 'settings' | 'tickets' | 'pricing' | 'support';
 
 const SEARCH_HOME = ((import.meta.env.VITE_SEARCH_URL as string | undefined) || 'https://collabrama.ru').replace(/\/+$/, '');
 
@@ -94,10 +94,20 @@ export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDe
 
         <div className="flex-1" />
 
-        <div className="px-3 pb-2">
-          <button type="button" onClick={() => (window as unknown as { cfSupportOpen?: () => void }).cfSupportOpen?.()}
-            className="w-full flex items-center gap-3 px-3.5 h-10 rounded-xl text-[13px] font-semibold text-[#4b5563] hover:bg-slate-50 transition-colors">
-            <span className="text-muted"><LifeBuoy size={16} /></span>Поддержка
+        <div className="px-3 pb-2 flex flex-col gap-0.5">
+          <button type="button" onClick={() => onNavigate('pricing')}
+            className={`w-full flex items-center gap-3 px-3.5 h-9 rounded-xl text-[13px] font-semibold transition-colors ${
+              active === 'pricing' ? 'bg-brand-50 text-brand-700' : 'text-[#4b5563] hover:bg-slate-50'}`}>
+            <span className={active === 'pricing' ? 'text-brand-500' : 'text-muted'}><CreditCard size={16} /></span>Тарифы
+          </button>
+          <button type="button" onClick={() => onNavigate('support')}
+            className={`w-full flex items-center gap-3 px-3.5 h-9 rounded-xl text-[13px] font-semibold transition-colors ${
+              active === 'support' ? 'bg-brand-50 text-brand-700' : 'text-[#4b5563] hover:bg-slate-50'}`}>
+            <span className={active === 'support' ? 'text-brand-500' : 'text-muted'}><LifeBuoy size={16} /></span>Поддержка
+          </button>
+          <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('cf:cookie-settings'))}
+            className="w-full flex items-center gap-3 px-3.5 h-9 rounded-xl text-[13px] font-semibold text-[#4b5563] hover:bg-slate-50 transition-colors">
+            <span className="text-muted"><Cookie size={16} /></span>Настройки cookie
           </button>
         </div>
 

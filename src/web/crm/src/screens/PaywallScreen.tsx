@@ -1,29 +1,52 @@
 import { useEffect, useState } from 'react';
-import { Check, Lock } from 'lucide-react';
-import { api, type SubscriptionPlanItem } from '../services/api';
+import { Check, Lock, Zap } from 'lucide-react';
+import { api, legalUrl, type SubscriptionPlanItem, type SubscriptionStatusInfo } from '../services/api';
 import { Btn } from '../components/ui';
+import { FEATURE_TITLES, fmtPrice, planTitle } from './pricing/planMeta';
 
-const PLAN_TITLES: Record<string, string> = {
-  trial: 'Триал',
-  basic: 'Базовый',
-  pro: 'Pro',
-  enterprise: 'Enterprise',
-};
+const PUBLIC_PRICING_URL = `${((import.meta.env.VITE_SEARCH_URL as string | undefined) || 'https://collabrama.ru').replace(/\/+$/, '')}/pricing`;
 
-const FEATURE_TITLES: Record<string, string> = {
-  automation_dialogs: 'Автоматизация диалогов',
-  automation_contracts: 'Автоматизация договоров',
-  automation_marking: 'Автоматизация маркировки',
-};
+function TrialBanner({ sub, onActivated }: { sub: SubscriptionStatusInfo | null; onActivated: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
-const fmtPrice = (price: string | null): string => {
-  if (price === null) return 'Индивидуально';
-  const value = Number(price);
-  if (!Number.isFinite(value) || value === 0) return '0 ₽';
-  return `${value.toLocaleString('ru-RU')} ₽/мес`;
-};
+  if (sub && !sub.trial_available) return null;
 
-function PlanCard({ plan, onPay, paying }: { plan: SubscriptionPlanItem; onPay: (name: string) => void; paying: boolean }) {
+  const activate = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await api.activateTrial();
+      onActivated();
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : 'Не удалось активировать триал');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="w-full rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white p-6 flex flex-col sm:flex-row sm:items-center gap-5">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="px-2.5 h-6 inline-flex items-center rounded-full bg-indigo-600 text-white text-[11px] font-bold">Пробный период</span>
+          <span className="text-[17px] font-extrabold text-gray-900">14 дней бесплатно</span>
+        </div>
+        <p className="mt-2 text-[12.5px] font-medium text-gray-500 leading-relaxed">
+          Полный доступ к CRM на 2 недели. <strong className="text-gray-700">Банковская карта не требуется</strong> —
+          по окончании триала ничего не спишется автоматически.
+        </p>
+        {error && <div className="mt-2 text-[12.5px] font-semibold text-red-500">{error}</div>}
+      </div>
+      <div className="shrink-0">
+        <Btn onClick={activate} disabled={busy}>
+          <Zap size={14} />{busy ? 'Активируем…' : 'Активировать триал'}
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+function PlanCard({ plan, onPay }: { plan: SubscriptionPlanItem; onPay: (name: string) => void }) {
   const disabled = !plan.is_active;
   const limits: string[] = [];
   if (plan.limits.brand_limit) limits.push(`Брендов: ${plan.limits.brand_limit}`);
@@ -36,7 +59,7 @@ function PlanCard({ plan, onPay, paying }: { plan: SubscriptionPlanItem; onPay: 
     <div className={`rounded-2xl border p-5 flex flex-col gap-3 w-[260px] ${disabled ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-indigo-100 bg-white shadow-sm'}`}>
       <div className="flex items-center justify-between">
         <div className={`text-[15px] font-bold ${disabled ? 'text-gray-400' : 'text-gray-900'}`}>
-          {PLAN_TITLES[plan.name] ?? plan.name}
+          {planTitle(plan.name)}
         </div>
         {disabled && <Lock size={14} className="text-gray-300" />}
       </div>
@@ -60,9 +83,7 @@ function PlanCard({ plan, onPay, paying }: { plan: SubscriptionPlanItem; onPay: 
         ) : disabled ? (
           <Btn variant="ghost" disabled>Временно недоступен</Btn>
         ) : (
-          <Btn onClick={() => onPay(plan.name)} disabled={paying}>
-            {paying ? 'Переход к оплате…' : 'Оплатить'}
-          </Btn>
+          <Btn onClick={() => onPay(plan.name)}>Подробнее и оплата</Btn>
         )}
       </div>
     </div>
@@ -71,25 +92,25 @@ function PlanCard({ plan, onPay, paying }: { plan: SubscriptionPlanItem; onPay: 
 
 export default function PaywallScreen() {
   const [plans, setPlans] = useState<SubscriptionPlanItem[]>([]);
+  const [sub, setSub] = useState<SubscriptionStatusInfo | null>(null);
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>('loading');
-  const [paying, setPaying] = useState(false);
-  const [payError, setPayError] = useState('');
 
   const load = () => {
     setStatus('loading');
-    api.getPlans()
-      .then(items => { setPlans(items.filter(p => p.name !== 'trial')); setStatus('ready'); })
+    Promise.all([api.getPlans(), api.getSubscription().catch(() => null)])
+      .then(([items, subscription]) => {
+        setPlans(items.filter(p => p.name !== 'trial'));
+        setSub(subscription);
+        setStatus('ready');
+      })
       .catch(() => setStatus('error'));
   };
 
   useEffect(load, []);
 
-  const handlePay = (planName: string) => {
-    setPaying(true);
-    setPayError('');
-    api.getCheckoutUrl(planName)
-      .then(url => { window.location.href = url; })
-      .catch(() => { setPaying(false); setPayError('Не удалось получить ссылку оплаты. Попробуйте ещё раз.'); });
+  // Подробности и оплата — на публичной странице тарифов.
+  const handlePay = (_planName: string) => {
+    window.location.href = PUBLIC_PRICING_URL;
   };
 
   return (
@@ -98,7 +119,8 @@ export default function PaywallScreen() {
         <div className="text-center">
           <div className="text-[24px] font-extrabold font-display text-gray-900">Подписка не активна</div>
           <div className="text-[13.5px] font-semibold text-gray-400 mt-2">
-            Чтобы продолжить работу с CRM, выберите тариф и оплатите доступ. Данные сохранены и никуда не денутся.
+            Чтобы продолжить работу с CRM, активируйте бесплатный пробный период или выберите тариф.
+            Данные сохранены и никуда не денутся.
           </div>
         </div>
         {status === 'loading' && (
@@ -110,15 +132,15 @@ export default function PaywallScreen() {
             <Btn variant="ghost" onClick={load}>Повторить</Btn>
           </div>
         )}
+        {status === 'ready' && <TrialBanner sub={sub} onActivated={() => window.location.reload()} />}
         {status === 'ready' && plans.length === 0 && (
           <div className="text-[13px] font-semibold text-gray-400">Тарифы пока не настроены. Напишите в поддержку.</div>
         )}
         {status === 'ready' && plans.length > 0 && (
           <div className="flex flex-wrap justify-center gap-4">
-            {plans.map(plan => <PlanCard key={plan.id} plan={plan} onPay={handlePay} paying={paying} />)}
+            {plans.map(plan => <PlanCard key={plan.id} plan={plan} onPay={handlePay} />)}
           </div>
         )}
-        {payError && <div className="text-[12.5px] font-semibold text-red-400">{payError}</div>}
         <div className="text-[11.5px] font-semibold text-gray-300">
           После оплаты доступ откроется автоматически в течение минуты.
         </div>
@@ -126,7 +148,7 @@ export default function PaywallScreen() {
           Оплата банковской картой через CloudPayments. Подписка продлевается автоматически каждые 31 день,
           отменить можно в любой момент — доступ сохранится до конца оплаченного периода.
           Оплачивая, вы принимаете{' '}
-          <a href="/legal/offer.html" target="_blank" rel="noopener" className="text-indigo-500 underline underline-offset-2">Публичную оферту</a>
+          <a href={legalUrl('offer.html')} target="_blank" rel="noopener" className="text-indigo-500 underline underline-offset-2">Публичную оферту</a>
           {' '}(порядок возврата — раздел 7).
         </div>
       </div>

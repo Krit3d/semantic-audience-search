@@ -17,10 +17,22 @@ import AnalyticsScreen from './screens/analytics/AnalyticsScreen';
 import Tickets from './screens/Tickets';
 import CommsScreen from './screens/comms/CommsScreen';
 import PaywallScreen from './screens/PaywallScreen';
+import CookieConsent from './components/CookieConsent';
+import ResetPasswordScreen from './components/ResetPasswordScreen';
 
-type Screen = 'kanban' | 'deals' | 'authors' | 'author' | 'comms' | 'settings' | 'brand' | 'analytics' | 'tickets';
+const resetTokenFromHash = (): string | null => {
+  const hash = window.location.hash;
+  if (!hash.startsWith('#/reset')) return null;
+  const q = hash.indexOf('?');
+  if (q === -1) return null;
+  return new URLSearchParams(hash.slice(q + 1)).get('token');
+};
+import PricingScreen from './screens/pricing/PricingScreen';
+import SupportScreen from './screens/SupportScreen';
 
-const SCREENS: Screen[] = ['kanban', 'deals', 'authors', 'author', 'comms', 'settings', 'brand', 'analytics', 'tickets'];
+type Screen = 'kanban' | 'deals' | 'authors' | 'author' | 'comms' | 'settings' | 'brand' | 'analytics' | 'tickets' | 'pricing' | 'support';
+
+const SCREENS: Screen[] = ['kanban', 'deals', 'authors', 'author', 'comms', 'settings', 'brand', 'analytics', 'tickets', 'pricing', 'support'];
 
 const screenFromHash = (): Screen => {
   let seg = window.location.hash;
@@ -94,10 +106,12 @@ const dealIdFromHash = (): string | null => {
 const NAV_BY_SCREEN: Record<Screen, NavId> = {
   kanban: 'deals', deals: 'deals', comms: 'comms', analytics: 'analytics',
   authors: 'base', author: 'base', settings: 'settings', brand: 'settings', tickets: 'tickets',
+  pricing: 'pricing', support: 'support',
 };
 
 const HASH_BY_NAV: Record<NavId, Screen> = {
   deals: 'kanban', comms: 'comms', analytics: 'analytics', base: 'authors', settings: 'settings', tickets: 'tickets',
+  pricing: 'pricing', support: 'support',
 };
 
 function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLogout: () => void }) {
@@ -194,6 +208,8 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
       {screen === 'settings' && <SettingsScreen user={user} onOpenBrand={openBrandEditor} />}
       {screen === 'brand' && brandEditorId !== null && <BrandEditorScreen brandId={brandEditorId} key={brandEditorId} onClose={() => { window.location.hash = '#/settings'; }} onOpenRegistry={() => { window.location.hash = '#/settings'; }} />}
       {screen === 'analytics' && <AnalyticsScreen />}
+      {screen === 'pricing' && <PricingScreen />}
+      {screen === 'support' && <SupportScreen />}
       {screen === 'tickets' && (isAdmin ? <Tickets /> : (
         <div className="h-full flex items-center justify-center">
           <div className="text-center">
@@ -557,9 +573,14 @@ export default function App() {
     window.location.hash = '#/authors';
   };
 
+  const resetToken = !authed ? resetTokenFromHash() : null;
+
   return (
     <ToastProvider>
-      {authed ? (paywall ? <PaywallScreen /> : <Shell key={String(user?.id ?? user?.email ?? 'guest')} user={user} onLogout={handleLogout} />) : <LoginModal onLogin={handleLogin} />}
+      {authed ? (paywall ? <PaywallScreen /> : <Shell key={String(user?.id ?? user?.email ?? 'guest')} user={user} onLogout={handleLogout} />) : (
+        resetToken ? <ResetPasswordScreen token={resetToken} /> : <LoginModal onLogin={handleLogin} />
+      )}
+      <CookieConsent />
     </ToastProvider>
   );
 }

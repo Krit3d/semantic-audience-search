@@ -392,6 +392,22 @@ export interface CreatorImportResult {
 
 const ROOT_API_URL = (import.meta.env.VITE_API_URL || 'https://api.collabrama.ru/api/v1').replace(/\/+$/, '');
 const API_BASE = `${ROOT_API_URL.replace(/\/crm\/?$/, '')}/crm`;
+
+export function oauthStartUrl(provider: 'vk' | 'yandex'): string {
+  return `${ROOT_API_URL}/crm/auth/oauth/${provider}/start`;
+}
+
+export interface OAuthProviders {
+  vk: boolean;
+  yandex: boolean;
+}
+
+// Юридические документы хостятся на основном домене (лендинг/поиск), а не на поддомене CRM.
+const LEGAL_HOST = ((import.meta.env.VITE_SEARCH_URL as string | undefined) || 'https://collabrama.ru').replace(/\/+$/, '');
+
+export function legalUrl(page: string): string {
+  return `${LEGAL_HOST}/legal/${page}`;
+}
 export const MEDIA_SERVER_BASE = (() => {
   try {
     const raw = import.meta.env.VITE_API_URL || 'https://api.collabrama.ru/api/v1';
@@ -422,6 +438,20 @@ export interface SubscriptionPlanItem {
   is_custom: boolean;
   limits: Record<string, number>;
   features: Record<string, boolean>;
+}
+
+export interface SubscriptionStatusInfo {
+  status: string;
+  is_active: boolean;
+  plan: SubscriptionPlanItem | null;
+  registered_at: string | null;
+  started_at: string | null;
+  last_payment_at: string | null;
+  expires_at: string | null;
+  auto_renew: boolean;
+  billing_email: string | null;
+  trial_used: boolean;
+  trial_available: boolean;
 }
 
 class ApiError extends Error {
@@ -500,6 +530,10 @@ export const api = {
     return request<SubscriptionPlanItem[]>('/billing/plans', {}, ROOT_API_URL);
   },
 
+  async getSubscription(): Promise<SubscriptionStatusInfo> {
+    return request<SubscriptionStatusInfo>('/billing/subscription', {}, ROOT_API_URL);
+  },
+
   async getCheckoutUrl(plan: string): Promise<string> {
     const data = await request<{ url: string }>(`/billing/checkout-url?plan=${encodeURIComponent(plan)}`, {}, ROOT_API_URL);
     return data.url;
@@ -514,6 +548,24 @@ export const api = {
     localStorage.setItem(USER_KEY, JSON.stringify(data.user));
     setAuthCookie();
     return data;
+  },
+
+  async forgotPassword(email: string): Promise<void> {
+    await request<{ ok: boolean }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async getOAuthProviders(): Promise<OAuthProviders> {
+    return request<OAuthProviders>('/auth/oauth/providers');
+  },
+
+  async resetPassword(token: string, password: string): Promise<void> {
+    await request<{ ok: boolean }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    });
   },
 
   async register(email: string, password: string, name?: string): Promise<LoginResponse> {
@@ -701,6 +753,39 @@ export const api = {
 
   getToken(): string {
     return localStorage.getItem(TOKEN_KEY) ?? '';
+  },
+
+  async getMyTickets(): Promise<SupportTicketItem[]> {
+    return request<SupportTicketItem[]>('/support/my-tickets', {}, ROOT_API_URL);
+  },
+
+  async getMyTicket(ticketId: number): Promise<SupportTicketDetail> {
+    return request<SupportTicketDetail>(`/support/my-tickets/${ticketId}`, {}, ROOT_API_URL);
+  },
+
+  async createTicket(payload: { category: string; subject: string; description: string }): Promise<SupportTicketItem> {
+    return request<SupportTicketItem>('/support/tickets', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...payload,
+        page_url: window.location.href,
+        user_agent: window.navigator.userAgent,
+      }),
+    }, ROOT_API_URL);
+  },
+
+  async cancelSubscription(password: string): Promise<{ ok: boolean; expires_at: string | null }> {
+    return request<{ ok: boolean; expires_at: string | null }>('/billing/cancel-subscription', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }, ROOT_API_URL);
+  },
+
+  async activateTrial(): Promise<{ ok: boolean; expires_at: string; period_days: number }> {
+    return request<{ ok: boolean; expires_at: string; period_days: number }>('/billing/trial/activate', {
+      method: 'POST',
+      body: '{}',
+    }, ROOT_API_URL);
   },
 
   async getTickets(params: { status?: string; category?: string; page?: number; pageSize?: number } = {}): Promise<SupportTicketListResponse> {

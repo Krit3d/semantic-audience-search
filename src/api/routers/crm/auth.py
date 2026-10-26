@@ -1,15 +1,31 @@
 import logging
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import func, select
 
 from src.api.dependencies import get_current_user, get_crm_client, get_db
-from src.api.schemas import CrmLoginRequest, CrmLoginResponse, CrmRegisterRequest, CrmUserResponse
+from src.api.schemas import (
+    CrmForgotPasswordRequest,
+    CrmLoginRequest,
+    CrmLoginResponse,
+    CrmRegisterRequest,
+    CrmResetPasswordRequest,
+    CrmUserResponse,
+)
 from src.api.services.crm_client import TwentyCrmClient
+from src.api.services.mailer import MailerNotConfigured, send_password_reset
 from src.db.database import Database
 from src.db.models import User
 from src.utils.rate_limiter import rate_limit
-from src.utils.security import AUTH_COOKIE_MAX_AGE, AUTH_COOKIE_NAME, create_access_token, hash_password, verify_password
+from src.utils.security import (
+    AUTH_COOKIE_MAX_AGE,
+    AUTH_COOKIE_NAME,
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    verify_password,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -149,3 +165,78 @@ async def crm_me(current_user: User = Depends(get_current_user)) -> CrmUserRespo
         name=current_user.name or current_user.email.split("@")[0],
         is_admin=current_user.is_admin,
     )
+
+
+RESET_TOKEN_TTL_HOURS = 1
+
+
+def _reset_fingerprint(password_hash: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(password_hash.encode("utf-8")).hexdigest()[:16]
+
+
+@router.post("/forgot-password")
+async def crm_forgot_password(
+    payload: CrmForgotPasswordRequest,
+    request: Request,
+    db: Database = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit(max_requests=3, window_seconds=60)),
+) -> dict[str, bool]:
+    """Отправляет ссылку для сброса пароля. Не раскрывает, существует ли аккаунт."""
+    settings = request.app.state.settings
+    email = payload.email.strip()
+
+    async with db.async_session() as session:
+        stmt = select(User).where(func.lower(User.email) == email.lower())
+        user = (await session.execute(stmt)).scalar_one_or_none()
+
+    # Аккаунты без пароля (созданные через OAuth или авто-созданные оплатой) —
+    # восстановление для них это первичная установка пароля, разрешаем.
+    if user is None:
+        return {"ok": True}
+
+    token = create_access_token(
+        {"purpose": "pwd_reset", "user_id": user.id, "fp": _reset_fingerprint(user.password_hash)},
+        settings.secret_key,
+        expires_delta_hours=RESET_TOKEN_TTL_HOURS,
+    )
+    reset_url = f"{settings.crm_frontend_url.rstrip('/')}/#/reset?token={quote(token)}"
+
+    try:
+        await send_password_reset(settings, to=user.email, reset_url=reset_url)
+    except MailerNotConfigured:
+        logger.error("Password reset requested but SMTP is not configured")
+        raise HTTPException(status_code=503, detail="Отправка писем временно недоступна. Напишите в поддержку.")
+    except Exception:
+        logger.exception("Failed to send password reset email to user %s", user.id)
+        raise HTTPException(status_code=502, detail="Не удалось отправить письмо. Попробуйте позже.")
+
+    logger.info("Password reset email sent to user %s", user.id)
+    return {"ok": True}
+
+
+@router.post("/reset-password")
+async def crm_reset_password(
+    payload: CrmResetPasswordRequest,
+    request: Request,
+    db: Database = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit(max_requests=5, window_seconds=60)),
+) -> dict[str, bool]:
+    settings = request.app.state.settings
+    data = decode_access_token(payload.token, settings.secret_key)
+    if data is None or data.get("purpose") != "pwd_reset" or not isinstance(data.get("user_id"), int):
+        raise HTTPException(status_code=400, detail="Ссылка недействительна или истекла. Запросите восстановление ещё раз.")
+
+    async with db.async_session() as session:
+        user = await session.get(User, data["user_id"])
+        if user is None or not user.is_active:
+            raise HTTPException(status_code=400, detail="Ссылка недействительна или истекла. Запросите восстановление ещё раз.")
+        # Отпечаток пароля делает токен одноразовым: после смены пароля старая ссылка не работает.
+        if data.get("fp") != _reset_fingerprint(user.password_hash):
+            raise HTTPException(status_code=400, detail="Ссылка уже использована. Запросите восстановление ещё раз.")
+        user.password_hash = hash_password(payload.password)
+        await session.commit()
+
+    logger.info("Password reset completed for user %s", user.id)
+    return {"ok": True}

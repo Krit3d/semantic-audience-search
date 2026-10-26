@@ -464,6 +464,10 @@ class User(Base):
     gateway_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     billing_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     billing_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    trial_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     plan_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("subscription_plans.id", ondelete="SET NULL"),

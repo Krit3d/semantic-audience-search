@@ -502,6 +502,11 @@ class Settings(BaseSettings):
         validation_alias="CLOUDPAYMENTS_SECRET_KEY",
         description="CloudPayments API secret for webhook Content-HMAC verification",
     )
+    cloudpayments_public_id: str | None = Field(
+        default=None,
+        validation_alias="CLOUDPAYMENTS_PUBLIC_ID",
+        description="CloudPayments public ID (site ID) for API calls such as subscription cancel",
+    )
     min_subscription_amount: int = Field(
         default=790000,
         validation_alias="MIN_SUBSCRIPTION_AMOUNT",
@@ -511,6 +516,38 @@ class Settings(BaseSettings):
         default=31,
         validation_alias="SUBSCRIPTION_PERIOD_DAYS",
         description="Fallback subscription extension period in days when plan is unknown",
+    )
+
+    # ---- OAuth (VK ID / Yandex ID) settings ----
+    api_public_url: str = Field(
+        default="https://api.collabrama.ru",
+        description="Public base URL of this API (used to build OAuth callback URLs)",
+    )
+    vk_oauth_client_id: str | None = Field(
+        default=None,
+        validation_alias="VK_OAUTH_CLIENT_ID",
+        description="VK ID application ID for OAuth sign-in",
+    )
+    vk_oauth_client_secret: str | None = Field(
+        default=None,
+        validation_alias="VK_OAUTH_CLIENT_SECRET",
+        description="VK ID secure key for OAuth sign-in",
+    )
+    yandex_oauth_client_id: str | None = Field(
+        default=None,
+        validation_alias="YANDEX_OAUTH_CLIENT_ID",
+        description="Yandex ID application ID for OAuth sign-in",
+    )
+    yandex_oauth_client_secret: str | None = Field(
+        default=None,
+        validation_alias="YANDEX_OAUTH_CLIENT_SECRET",
+        description="Yandex ID application secret for OAuth sign-in",
+    )
+
+    # ---- Transactional mail ----
+    smtp_from: str | None = Field(
+        default=None,
+        description="Sender address for transactional emails (defaults to smtp_user)",
     )
 
     # ---- Channel sourcing ----

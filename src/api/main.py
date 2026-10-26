@@ -262,6 +262,18 @@ async def landing_en(request: Request) -> HTMLResponse:
     return page
 
 
+@app.get("/pricing", response_class=HTMLResponse)
+@app.get("/about", response_class=HTMLResponse)
+@app.get("/contacts", response_class=HTMLResponse)
+async def pricing_page(request: Request) -> HTMLResponse:
+    """Публичные страницы тарифов, «О нас» и «Контакты» (лендинг-приложение рендерит по пути)."""
+    settings = request.app.state.settings
+    page = _render_landing(settings)
+    if page is None:
+        raise HTTPException(status_code=404, detail="Лендинг не собран")
+    return page
+
+
 if WEB_DIR.exists():
     app.mount(
         "/css",
@@ -293,7 +305,6 @@ if LEGAL_DIR.exists():
 LEGAL_REDIRECTS = {
     "/privacy": "/legal/privacy.html",
     "/offer": "/legal/offer.html",
-    "/pricing": "/legal/offer.html",
     "/terms": "/legal/offer.html",
     "/aup": "/legal/aup.html",
     "/cookies": "/legal/cookie.html",

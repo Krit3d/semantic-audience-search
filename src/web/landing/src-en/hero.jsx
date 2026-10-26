@@ -120,9 +120,9 @@ const SearchBox = ({
             <span className="mono-mini">{label}</span>
           </div>
           <div className="hidden sm:flex items-center gap-2">
-            <span className="chip" style={{padding:'2px 8px', fontSize:11}}><I.Telegram size={11}/> Telegram</span>
-            <span className="chip" style={{padding:'2px 8px', fontSize:11}}><I.Instagram size={11}/> Instagram</span>
-            <span className="chip" style={{padding:'2px 8px', fontSize:11}}><I.Tiktok size={11}/> TikTok</span>
+            <span className="chip" style={{padding:'2px 8px', fontSize:11}}>Video</span>
+            <span className="chip" style={{padding:'2px 8px', fontSize:11}}>Channels</span>
+            <span className="chip" style={{padding:'2px 8px', fontSize:11}}>Posts</span>
           </div>
         </div>
         <div className="flex items-start gap-2 px-2 pt-1 pb-2">
@@ -166,7 +166,7 @@ const SearchBox = ({
 };
 
 const Hero = ({ onSearch }) => {
-  const placeholder = "For example: A sensitive-skin skincare brand, sold on Amazon. We need creators who genuinely talk about skincare and ingredients, not just “beauty”. Audience — women 25–40, US & UK. Telegram and TikTok. Format — an honest review with a texture demo. Tone of voice — calm, no aggressive selling. Budget — up to $500 or barter + promo code.";
+  const placeholder = "For example: A sensitive-skin skincare brand, sold on Amazon. We need creators who genuinely talk about skincare and ingredients, not just “beauty”. Audience — women 25–40, US & UK. Format — an honest review with a texture demo. Tone of voice — calm, no aggressive selling. Budget — up to $500 or barter + promo code.";
   return (
     <section id="top" className="relative overflow-hidden">
       <div className="aurora"/>
@@ -195,8 +195,8 @@ const Hero = ({ onSearch }) => {
             Smart creator matching <span className="grad-text">powered by content analysis</span>
           </h1>
           <p className="mt-5 text-[16.5px] sm:text-[18px] leading-relaxed text-ink-600 max-w-[620px] text-pretty">
-            Describe your task — Collabrama finds every relevant creator across Telegram,
-            Instagram and TikTok, accounting for what they talk about and how.
+            Describe your task — Collabrama finds relevant content creators,
+            accounting for what they talk about and how.
           </p>
 
           <div className="mt-7">

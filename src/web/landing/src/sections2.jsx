@@ -3,6 +3,14 @@ import { I } from "./icons.jsx";
 import { TrendFlow } from "./mockups.jsx";
 import { Section, SectionHead } from "./sections.jsx";
 import { SearchBox } from "./hero.jsx";
+import {
+  CONSENT_SETTINGS_EVENT,
+  acceptAllConsent,
+  getConsent,
+  openCookieSettings,
+  rejectAllConsent,
+  saveConsent,
+} from "./cookie-consent.js";
 // Sections: audience → use cases → comparison → vision → objections → final CTA → FAQ → footer
 
 // — Section 10: For whom (3 segments) —
@@ -51,8 +59,8 @@ const AudienceSection = () => {
 // — Section 11: Use cases —
 const UseCasesSection = () => {
   const items = [
-    { i:<I.Telegram size={14}/>, t:'Найти 50 Telegram-каналов для посева нового продукта' },
-    { i:<I.Tiktok size={14}/>,   t:'Собрать TikTok-креаторов под UGC-контент' },
+    { i:<I.Chat size={14}/>, t:'Найти 50 тематических каналов для посева нового продукта' },
+    { i:<I.Sparkle size={14}/>,   t:'Собрать креаторов под UGC-контент' },
     { i:<I.Store size={14}/>,    t:'Найти авторов контента для товара на Wildberries' },
     { i:<I.Coin size={14}/>,     t:'Запустить переговоры по бартеру' },
     { i:<I.Sliders size={14}/>,  t:'Сравнить авторов по цене и вовлечённости' },
@@ -176,7 +184,7 @@ const ObjectionsSection = () => {
 
 // — Section 15: Final CTA —
 const FinalCTASection = ({ onSearch }) => {
-  const placeholder = "Например: Бренд спортивного питания — протеин и предтреники, продаём на Ozon и своём сайте. Нужны авторы, которые реально разбираются в тренировках и питании (а не просто фитнес-картинки): говорят про составы, БЖУ, режим, восстановление. Аудитория — мужчины 20–35, RU. Telegram и TikTok. Формат — честный обзор с личным опытом и демонстрацией. Tone of voice — экспертный, без хайпа и обещаний «чудо-результата». Бюджет — бартер или фикс до 30 000 ₽, интересен CPA с промокодом.";
+  const placeholder = "Например: Бренд спортивного питания — протеин и предтреники, продаём на Ozon и своём сайте. Нужны авторы, которые реально разбираются в тренировках и питании (а не просто фитнес-картинки): говорят про составы, БЖУ, режим, восстановление. Аудитория — мужчины 20–35, RU. Формат — честный обзор с личным опытом и демонстрацией. Tone of voice — экспертный, без хайпа и обещаний «чудо-результата». Бюджет — бартер или фикс до 30 000 ₽, интересен CPA с промокодом.";
   return (
     <Section className="py-16 sm:py-20">
       <div className="relative card overflow-hidden p-6 sm:p-10 lg:p-14">
@@ -284,11 +292,24 @@ const Footer = ({ onSearch }) => (
       <div className="text-[12.5px] text-ink-500">© 2026 Collabrama · 12+</div>
     </div>
     <div className="max-w-[1200px] mx-auto px-5 sm:px-8 pb-6 flex flex-wrap gap-x-5 gap-y-2">
+      <a href="/pricing" className="text-[12.5px] font-semibold text-ink-700 underline decoration-ink-200 underline-offset-2 hover:text-ink-900 transition-colors">
+        Тарифы и подписка
+      </a>
+      <a href="/about" className="text-[12.5px] text-ink-500 underline decoration-ink-200 underline-offset-2 hover:text-ink-800 transition-colors">
+        О нас
+      </a>
+      <a href="/contacts" className="text-[12.5px] text-ink-500 underline decoration-ink-200 underline-offset-2 hover:text-ink-800 transition-colors">
+        Контакты
+      </a>
       {LEGAL_LINKS.map((l) => (
         <a key={l.href} href={l.href} className="text-[12.5px] text-ink-500 underline decoration-ink-200 underline-offset-2 hover:text-ink-800 transition-colors">
           {l.label}
         </a>
       ))}
+      <button type="button" onClick={openCookieSettings}
+        className="text-[12.5px] text-ink-500 underline decoration-ink-200 underline-offset-2 hover:text-ink-800 transition-colors">
+        Настройки cookie
+      </button>
     </div>
     <div className="max-w-[1200px] mx-auto px-5 sm:px-8 pb-8 text-[11.5px] leading-relaxed text-ink-400">
       ИП Глушакова Марина Сергеевна · ИНН 672608517020 · ОГРНИП 326774600410105 ·{" "}
@@ -297,38 +318,167 @@ const Footer = ({ onSearch }) => (
   </footer>
 );
 
-const COOKIE_KEY = "cf_cookie_accepted";
+// — Cookie consent: баннер (отклонить / принять все / настроить) + панель гранулярных настроек —
+
+const COOKIE_CATEGORIES = [
+  {
+    id: "technical",
+    title: "Технические (обязательные)",
+    locked: true,
+    description:
+      "Без них сайт не заработает: авторизация и безопасность. Не используются для маркетинга и отслеживания.",
+    details: [
+      ["cf_auth", "признак авторизованной сессии для маршрутизации", "30 дней"],
+      ["cf_cookie_consent", "ваш выбор настроек cookie", "1 год"],
+      ["creatorflow_token (localStorage)", "токен сессии CRM и поиска", "до выхода из аккаунта"],
+    ],
+  },
+  {
+    id: "functional",
+    title: "Функциональные",
+    description:
+      "Запоминают ваши настройки и предпочтения в интерфейсе. Хранятся только на наших серверах и в вашем браузере, не передаются третьим лицам.",
+    details: [],
+    offNote: "Без функциональных cookie сайт не запомнит ваши настройки между визитами.",
+  },
+  {
+    id: "analytics",
+    title: "Аналитические",
+    description:
+      "Помогают понять, какими разделами пользуются чаще, чтобы делать сервис удобнее. Сейчас аналитические cookie не используются — включение категории ни к чему вас не обязывает: мы честно сообщим здесь, если подключим аналитику.",
+    details: [],
+    offNote: "Отказ от аналитических cookie никак не ограничивает работу сайта.",
+  },
+  {
+    id: "marketing",
+    title: "Рекламные",
+    description:
+      "Делают рекламу сервиса релевантнее. Сейчас рекламные cookie не используются — мы не передаём данные рекламным сетям.",
+    details: [],
+    offNote: "Отказ от рекламных cookie никак не ограничивает работу сайта.",
+  },
+];
+
+const CookieSettingsModal = ({ initial, onClose }) => {
+  const [choice, setChoice] = React.useState({
+    functional: initial?.functional === true,
+    analytics: initial?.analytics === true,
+    marketing: initial?.marketing === true,
+  });
+
+  React.useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+
+  const save = () => { saveConsent(choice); onClose(); };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Настройка cookie">
+      <div className="absolute inset-0 bg-ink-900/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative card w-full max-w-[620px] max-h-[88vh] overflow-y-auto p-6 animate-rise">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-[19px] font-bold text-ink-900">Настройка cookie</div>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-ink-600">
+              Выберите, какие cookie мы можем использовать. Технические обязательны — без них сайт не работает.
+              Мы запомним ваш выбор на год, изменить его можно в любой момент: ссылка «Настройки cookie» есть в подвале каждой страницы.
+            </p>
+          </div>
+          <button onClick={onClose} className="shrink-0 w-9 h-9 rounded-full bg-ink-100 hover:bg-ink-200 flex items-center justify-center text-ink-600" aria-label="Закрыть">
+            <I.Close size={16} />
+          </button>
+        </div>
+
+        <div className="mt-5 flex flex-col divide-y divide-ink-100">
+          {COOKIE_CATEGORIES.map((cat) => {
+            const on = cat.locked || choice[cat.id];
+            return (
+              <div key={cat.id} className="py-4">
+                <label className={`flex items-center gap-2.5 ${cat.locked ? "cursor-default" : "cursor-pointer"}`}>
+                  <input type="checkbox" checked={on} disabled={cat.locked}
+                    onChange={(e) => setChoice((c) => ({ ...c, [cat.id]: e.target.checked }))}
+                    className="w-4 h-4 rounded border-ink-300 accent-indigo-600" />
+                  <span className="text-[14px] font-bold text-ink-900">{cat.title}</span>
+                </label>
+                <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-600">{cat.description}</p>
+                {cat.details.length > 0 && (
+                  <div className="mt-2 rounded-xl bg-ink-50/60 border border-ink-100 px-3 py-2">
+                    {cat.details.map(([name, purpose, ttl]) => (
+                      <div key={name} className="py-1 text-[11.5px] leading-relaxed text-ink-600">
+                        <span className="font-mono font-semibold text-ink-800">{name}</span> — {purpose} · <span className="text-ink-400">{ttl}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!on && cat.offNote && (
+                  <div className="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-[11.5px] leading-relaxed text-amber-800">
+                    {cat.offNote}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2.5">
+          <button onClick={save} className="btn-primary px-5 h-10 rounded-xl text-[13.5px] font-semibold">Сохранить выбор</button>
+          <button onClick={() => { acceptAllConsent(); onClose(); }} className="btn-ghost px-4 h-10 rounded-xl text-[13px] font-medium">Принять все</button>
+          <button onClick={() => { rejectAllConsent(); onClose(); }} className="btn-ghost px-4 h-10 rounded-xl text-[13px] font-medium">Отклонить необязательные</button>
+        </div>
+        <div className="mt-3 text-[11.5px] text-ink-400">
+          Подробности — в{" "}
+          <a href="/legal/cookie.html" target="_blank" rel="noopener" className="underline underline-offset-2 text-ink-600">Политике в отношении обработки cookie-файлов</a>.
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const CookieBanner = () => {
-  const [visible, setVisible] = React.useState(() => {
-    try {
-      return !localStorage.getItem(COOKIE_KEY);
-    } catch {
-      return true;
-    }
-  });
-  if (!visible) return null;
-  const accept = () => {
-    try {
-      localStorage.setItem(COOKIE_KEY, "1");
-    } catch {
-      /* ignore */
-    }
-    setVisible(false);
-  };
+  const [consent, setConsentState] = React.useState(() => getConsent());
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    const open = () => setSettingsOpen(true);
+    window.addEventListener(CONSENT_SETTINGS_EVENT, open);
+    return () => window.removeEventListener(CONSENT_SETTINGS_EVENT, open);
+  }, []);
+
+  const decided = (c) => setConsentState(c);
+
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-[640px] w-[calc(100%-32px)] rounded-2xl border border-ink-100 bg-white shadow-xl px-5 py-4 flex flex-wrap items-center gap-3">
-      <p className="text-[12.5px] leading-relaxed text-ink-600 flex-1 min-w-[240px]">
-        Мы используем cookie для работы сайта и аналитики. Продолжая пользоваться сайтом, вы соглашаетесь с{" "}
-        <a href="/legal/cookie.html" className="underline underline-offset-2 text-ink-800">уведомлением об использовании cookie</a>.
-      </p>
-      <button
-        onClick={accept}
-        className="px-4 h-9 rounded-lg bg-ink-900 text-white text-[13px] font-semibold hover:bg-ink-700 transition-colors"
-      >
-        Принять
-      </button>
-    </div>
+    <>
+      {!consent && !settingsOpen && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-[720px] w-[calc(100%-32px)] rounded-2xl border border-ink-100 bg-white shadow-xl px-5 py-4">
+          <div className="text-[14.5px] font-bold text-ink-900">Мы используем cookie, чтобы сделать сайт удобнее</div>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-ink-600">
+            Технические cookie нужны для работы сайта, остальные — только с вашего согласия.
+            Хотите выбрать сами?{" "}
+            <button type="button" onClick={() => setSettingsOpen(true)} className="underline underline-offset-2 text-ink-800 font-semibold">Настроить cookies</button>
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button onClick={() => decided(rejectAllConsent())}
+              className="px-4 h-9 rounded-lg border border-ink-200 text-ink-700 text-[13px] font-semibold hover:bg-ink-50 transition-colors">
+              Отклонить
+            </button>
+            <button onClick={() => decided(acceptAllConsent())}
+              className="px-4 h-9 rounded-lg bg-ink-900 text-white text-[13px] font-semibold hover:bg-ink-700 transition-colors">
+              Принять все cookie
+            </button>
+          </div>
+          <div className="mt-2.5 text-[11px] text-ink-400">
+            <a href="/legal/cookie.html" target="_blank" rel="noopener" className="underline underline-offset-2 hover:text-ink-600">Политика в отношении обработки cookie-файлов</a>
+          </div>
+        </div>
+      )}
+      {settingsOpen && (
+        <CookieSettingsModal initial={consent} onClose={() => { setSettingsOpen(false); setConsentState(getConsent()); }} />
+      )}
+    </>
   );
 };
 

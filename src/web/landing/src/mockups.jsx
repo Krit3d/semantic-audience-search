@@ -3,13 +3,7 @@ import { I } from "./icons.jsx";
 // Reusable product-style mockup components.
 // They are static (no real backend), but feel like real UI surfaces.
 
-const platformIcon = (p) => {
-  if (p === "Telegram")  return <I.Telegram size={14} />;
-  if (p === "TikTok")    return <I.Tiktok size={14} />;
-  if (p === "Instagram") return <I.Instagram size={14} />;
-  if (p === "YouTube")   return <I.Youtube size={14} />;
-  return <I.Dot size={14} />;
-};
+const platformIcon = () => <I.Dot size={14} />;
 
 // — Avatar with initials + soft brand-toned gradient —
 const Avatar = ({ name, size = 36, hue = 250 }) => {
@@ -25,17 +19,14 @@ const Avatar = ({ name, size = 36, hue = 250 }) => {
   );
 };
 
-// — Photo avatar with a platform-specific "story" ring —
-// Instagram: multicolour gradient ring. TikTok: dark ring + cyan/pink glow.
-// Telegram: solid blue ring (Telegram Stories look).
+// — Photo avatar with a soft brand-toned ring —
 const PlatformAvatar = ({ photo, name, platform, size = 30 }) => {
   const rings = {
-    Instagram: 'linear-gradient(135deg,#f9ce34,#ee2a7b 45%,#6228d7)',
-    TikTok:    'linear-gradient(135deg,#25f4ee,#000 45%,#fe2c55)',
-    Telegram:  'linear-gradient(135deg,#37aee2,#1e96c8)',
-    YouTube:   'linear-gradient(135deg,#ff4e45,#c4302b)',
+    'Канал': 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+    'Видео': 'linear-gradient(135deg,#8b5cf6,#3b82f6)',
+    'Блог':  'linear-gradient(135deg,#3b82f6,#6366f1)',
   };
-  const ring = rings[platform] || rings.Instagram;
+  const ring = rings[platform] || 'linear-gradient(135deg,#6366f1,#8b5cf6)';
   return (
     <span className="shrink-0 rounded-full block" style={{ background: ring, padding: 2 }}>
       <img src={`https://i.pravatar.cc/120?img=${photo}`} alt={name}
@@ -120,9 +111,9 @@ const Metric = ({ label, value, spark }) => (
 // — Hero search-panel mockup: product-feeling surface (compact) —
 const HeroProductMockup = () => {
   const creators = [
-    { name:'Аня Соколова', handle:'@sokolova.skin', platform:'Telegram', niche:'косметика · уход', audience:'128K', er:'8.4%', relevance:92, photo:47 },
-    { name:'Кирилл Дёмин', handle:'@demin.finds', platform:'TikTok', niche:'находки с маркетплейсов', audience:'214K', er:'11.2%', relevance:89, photo:12 },
-    { name:'Лена Верещагина', handle:'@lenavereshchagina', platform:'Instagram', niche:'обзоры · lifestyle', audience:'76K', er:'6.9%', relevance:84, photo:45 },
+    { name:'Аня Соколова', handle:'@sokolova.skin', platform:'Канал', niche:'косметика · уход', audience:'128K', er:'8.4%', relevance:92, photo:47 },
+    { name:'Кирилл Дёмин', handle:'@demin.finds', platform:'Видео', niche:'находки с маркетплейсов', audience:'214K', er:'11.2%', relevance:89, photo:12 },
+    { name:'Лена Верещагина', handle:'@lenavereshchagina', platform:'Блог', niche:'обзоры · lifestyle', audience:'76K', er:'6.9%', relevance:84, photo:45 },
   ];
   return (
     <div className="relative">
@@ -181,13 +172,13 @@ const HeroProductMockup = () => {
 // — Mass outreach / chat mockup (UTP3) —
 const OutreachMockup = () => {
   const threads = [
-    { name:'Beauty Notes', platform:'Telegram', hue:280, status:'в переговорах', statusColor:'var(--accent)',
+    { name:'Beauty Notes', platform:'Канал', hue:280, status:'в переговорах', statusColor:'var(--accent)',
       last:'Готовы по бартеру + 10K. Нужно ТЗ.', time:'14:22', unread:2 },
-    { name:'Market Finds', platform:'TikTok', hue:230, status:'согласовано', statusColor:'#10b981',
+    { name:'Market Finds', platform:'Видео', hue:230, status:'согласовано', statusColor:'#10b981',
       last:'Окей по 35K, выход 12.06.', time:'13:48' },
-    { name:'Home & Beauty', platform:'Instagram', hue:320, status:'follow-up', statusColor:'#f59e0b',
+    { name:'Home & Beauty', platform:'Блог', hue:320, status:'follow-up', statusColor:'#f59e0b',
       last:'Напомнить про статистику', time:'12:10' },
-    { name:'Real Talk', platform:'Telegram', hue:200, status:'ответил', statusColor:'var(--accent)',
+    { name:'Real Talk', platform:'Канал', hue:200, status:'ответил', statusColor:'var(--accent)',
       last:'Пришлите бриф + продукт', time:'11:32', unread:1 },
   ];
   const msgs = [
@@ -235,7 +226,7 @@ const OutreachMockup = () => {
           <div>
             <div className="text-[14px] font-semibold">Beauty Notes</div>
             <div className="text-[11px] text-ink-500 flex items-center gap-1.5">
-              <I.Telegram size={11}/> Telegram · косметика · 128K · ER 8.4%
+              косметика · 128K · ER 8.4%
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -284,33 +275,33 @@ const OutreachMockup = () => {
 const PipelineMockup = () => {
   const cols = [
     { title:'Найдены', count: 126, cards:[
-      { name:'Soft Skin Diary', platform:'Telegram', niche:'beauty', rel:91, hue:290, next:'отправить first touch' },
-      { name:'Daily Wishlist',  platform:'TikTok',   niche:'beauty UGC', rel:88, hue:240 },
+      { name:'Soft Skin Diary', platform:'Канал', niche:'beauty', rel:91, hue:290, next:'отправить first touch' },
+      { name:'Daily Wishlist',  platform:'Видео',   niche:'beauty UGC', rel:88, hue:240 },
     ]},
     { title:'Shortlist', count: 42, cards:[
-      { name:'Beauty Notes',    platform:'Telegram', niche:'уход', rel:92, hue:280, price:'фикс/бартер' },
-      { name:'Market Finds',    platform:'TikTok',   niche:'WB-находки', rel:89, hue:230, price:'≤ 40K' },
-      { name:'Home & Beauty',   platform:'Instagram',niche:'обзоры', rel:84, hue:320, price:'бартер + промо' },
+      { name:'Beauty Notes',    platform:'Канал', niche:'уход', rel:92, hue:280, price:'фикс/бартер' },
+      { name:'Market Finds',    platform:'Видео',   niche:'WB-находки', rel:89, hue:230, price:'≤ 40K' },
+      { name:'Home & Beauty',   platform:'Блог',niche:'обзоры', rel:84, hue:320, price:'бартер + промо' },
     ]},
     { title:'Сообщение отправлено', count: 38, cards:[
-      { name:'Glow Letters',    platform:'Telegram', niche:'уход', rel:87, hue:260, next:'follow-up через 2 дня', flag:true },
+      { name:'Glow Letters',    platform:'Канал', niche:'уход', rel:87, hue:260, next:'follow-up через 2 дня', flag:true },
     ]},
     { title:'Ответили', count: 17, cards:[
-      { name:'Real Talk',       platform:'Telegram', niche:'lifestyle', rel:82, hue:200, next:'выслать ТЗ' },
-      { name:'Skin Story',      platform:'Instagram',niche:'beauty', rel:79, hue:340 },
+      { name:'Real Talk',       platform:'Канал', niche:'lifestyle', rel:82, hue:200, next:'выслать ТЗ' },
+      { name:'Skin Story',      platform:'Блог',niche:'beauty', rel:79, hue:340 },
     ]},
     { title:'В переговорах', count: 11, cards:[
-      { name:'Beauty Notes',    platform:'Telegram', niche:'уход', rel:92, hue:280, price:'бартер + 10K', next:'согласовать дату', flag:true },
+      { name:'Beauty Notes',    platform:'Канал', niche:'уход', rel:92, hue:280, price:'бартер + 10K', next:'согласовать дату', flag:true },
     ]},
     { title:'Согласовано', count: 8, cards:[
-      { name:'Market Finds',    platform:'TikTok',   niche:'WB', rel:89, hue:230, price:'35K · 12.06' },
-      { name:'Quick Picks',     platform:'TikTok',   niche:'UGC', rel:85, hue:210, price:'CPA · промо' },
+      { name:'Market Finds',    platform:'Видео',   niche:'WB', rel:89, hue:230, price:'35K · 12.06' },
+      { name:'Quick Picks',     platform:'Видео',   niche:'UGC', rel:85, hue:210, price:'CPA · промо' },
     ]},
     { title:'Размещение вышло', count: 5, cards:[
-      { name:'Cozy Routines',   platform:'Instagram',niche:'lifestyle', rel:81, hue:300, next:'снять отчёт' },
+      { name:'Cozy Routines',   platform:'Блог',niche:'lifestyle', rel:81, hue:300, next:'снять отчёт' },
     ]},
     { title:'Результат зафиксирован', count: 3, cards:[
-      { name:'Glow Letters',    platform:'Telegram', niche:'уход', rel:87, hue:260, price:'CPM 320 ₽', next:'добавить в базу' },
+      { name:'Glow Letters',    platform:'Канал', niche:'уход', rel:87, hue:260, price:'CPM 320 ₽', next:'добавить в базу' },
     ]},
   ];
   return (
@@ -495,10 +486,10 @@ const SemanticCompare = () => (
 // — Trend flow visual (vision) —
 const TrendFlow = () => {
   const stages = [
-    { p:'TikTok', icon:<I.Tiktok size={14}/>, label:'зарождение тренда', value:'+18%', hue:240 },
-    { p:'Instagram Reels', icon:<I.Instagram size={14}/>, label:'рост вовлечённости', value:'+34%', hue:280 },
-    { p:'YouTube Shorts', icon:<I.Youtube size={14}/>, label:'переход на новую платформу', value:'+62%', hue:320 },
-    { p:'Telegram', icon:<I.Telegram size={14}/>, label:'рекомендация формата интеграции', value:'готово к ТЗ', hue:220, final:true },
+    { p:'Видео', icon:<I.Sparkle size={14}/>, label:'зарождение тренда', value:'+18%', hue:240 },
+    { p:'Видео', icon:<I.Sparkle size={14}/>, label:'рост вовлечённости', value:'+34%', hue:280 },
+    { p:'Shorts-видео', icon:<I.Sparkle size={14}/>, label:'переход тренда в новый формат', value:'+62%', hue:320 },
+    { p:'Канал', icon:<I.Chat size={14}/>, label:'рекомендация формата интеграции', value:'готово к ТЗ', hue:220, final:true },
   ];
   return (
     <div className="card p-5 sm:p-6">
@@ -537,7 +528,7 @@ const TrendFlow = () => {
 
       <div className="mt-4 rounded-2xl border border-ink-100 bg-ink-50/50 p-4 text-[12.5px] text-ink-700 leading-relaxed">
         <span className="font-semibold text-ink-900">Пример: </span>
-        тренд начинает переходить из TikTok в YouTube Shorts → бренд может заранее подготовить
+        тренд начинает переходить в соседние форматы → бренд может заранее подготовить
         интеграцию под этот формат и отправить автору ТЗ до того, как тренд станет перегретым.
       </div>
     </div>

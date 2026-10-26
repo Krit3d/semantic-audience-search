@@ -10,6 +10,7 @@ from src.api.routers.crm import (
     deals,
     erid,
     media,
+    oauth,
     webhooks,
 )
 
@@ -17,6 +18,7 @@ _subscription = [Depends(require_subscription)]
 
 router = APIRouter(prefix="/crm")
 router.include_router(auth.router)
+router.include_router(oauth.router)
 router.include_router(webhooks.router)
 router.include_router(media.router, dependencies=_subscription)
 router.include_router(creators.router, dependencies=_subscription)

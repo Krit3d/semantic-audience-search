@@ -492,6 +492,32 @@ class CrmUserResponse(BaseModel):
     is_admin: bool = Field(description="Administrator flag")
 
 
+class CrmForgotPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255, description="Email of the account to recover")
+
+
+class PublicCheckoutRequest(BaseModel):
+    plan: str = Field(min_length=1, max_length=64, description="Plan name (e.g. basic, pro)")
+    email: str = Field(min_length=3, max_length=255, description="Payer email for account binding")
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = value.strip()
+        if not re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", normalized):
+            raise ValueError("Некорректный email")
+        return normalized
+
+
+class CancelSubscriptionRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128, description="Account password for confirmation")
+
+
+class CrmResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=4096, description="Password reset token from the email link")
+    password: str = Field(min_length=8, max_length=128, description="New password")
+
+
 class CrmUpdateStatusRequest(BaseModel):
     status: str = Field(description="New status value for the creator")
     archive_active_deals: bool = Field(default=False, description="Archive active deals when archiving the creator")

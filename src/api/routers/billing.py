@@ -10,9 +10,11 @@ from sqlalchemy import String, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from src.api.dependencies import get_current_user, get_db, require_admin
+from src.api.schemas import CancelSubscriptionRequest, PublicCheckoutRequest
 from src.api.services.cloudpayments_signature import verify_signature
 from src.db.database import Database
 from src.db.models import PaymentEvent, SubscriptionPlan, User
+from src.utils.security import verify_password
 
 logger = logging.getLogger(__name__)
 MAX_WEBHOOK_BODY = 1 * 1024 * 1024
@@ -82,6 +84,21 @@ def _extract_plan_name(payload: dict[str, Any]) -> str | None:
     return None
 
 
+def _extract_data_email(payload: dict[str, Any]) -> str | None:
+    """Email, переданный нами в data при публичной покупке без регистрации."""
+    data = payload.get("Data") or payload.get("data")
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except ValueError:
+            return None
+    if isinstance(data, dict):
+        email = data.get("email")
+        if email is not None and str(email).strip():
+            return str(email).strip()
+    return None
+
+
 def _event_key_for_event(event: str, payload: dict[str, Any]) -> str:
     transaction_id = _first(payload, "TransactionId", "PaymentId")
     if transaction_id:
@@ -138,6 +155,12 @@ async def _find_user(session, payload: dict[str, Any]) -> User | None:
         if user is not None:
             return user
         stmt = select(User).where(func.lower(User.billing_email) == email.lower())
+        user = (await session.execute(stmt)).scalar_one_or_none()
+        if user is not None:
+            return user
+    data_email = _extract_data_email(payload)
+    if data_email and data_email.lower() != (email or "").lower():
+        stmt = select(User).where(func.lower(User.email) == data_email.lower())
         user = (await session.execute(stmt)).scalar_one_or_none()
         if user is not None:
             return user
@@ -214,18 +237,36 @@ async def cloudpayments_webhook(
         raise HTTPException(status_code=500, detail="Database error")
 
     if user is None:
-        logger.warning("CloudPayments webhook: customer not found, event=%s", event)
-        await _store_event(
-            db,
-            event_key=_event_key_for_event(f"customer_not_found_{event}", payload),
-            user_id=None,
-            event_type="customer_not_found",
-            amount=amount,
-            currency=currency,
-            status=event,
-            raw_payload=payload,
-        )
-        return _ok()
+        email = _first(payload, "Email", "email") or _extract_data_email(payload)
+        if not email:
+            logger.warning("CloudPayments webhook: customer not found and no email, event=%s", event)
+            await _store_event(
+                db,
+                event_key=_event_key_for_event(f"customer_not_found_{event}", payload),
+                user_id=None,
+                event_type="customer_not_found",
+                amount=amount,
+                currency=currency,
+                status=event,
+                raw_payload=payload,
+            )
+            return _ok()
+        # Публичная покупка без регистрации: создаём аккаунт на email из платежа,
+        # пароль пользователь задаёт позже через «Забыли пароль?».
+        try:
+            async with db.async_session() as session:
+                user = User(email=email.strip(), password_hash="")
+                session.add(user)
+                await session.commit()
+                user_id = user.id
+            async with db.async_session() as session:
+                user = await session.get(User, user_id)
+            logger.info("CloudPayments webhook: account auto-created for %s (user %s)", email, user_id)
+        except (IntegrityError, SQLAlchemyError):
+            logger.exception("CloudPayments webhook: failed to auto-create user for payment")
+            raise HTTPException(status_code=500, detail="Database error")
+        if user is None:
+            raise HTTPException(status_code=500, detail="Database error")
 
     if event in CLOSING_EVENTS:
         logger.info(
@@ -362,6 +403,116 @@ async def list_plans(
     ]
 
 
+@router.get("/subscription")
+async def subscription_status(
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Прозрачный статус подписки: тариф, сроки, автопродление."""
+    now = datetime.now(timezone.utc)
+    expires = current_user.subscription_expires_at
+    if expires is not None and expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    is_active = (
+        current_user.subscription_status == "active"
+        and expires is not None
+        and expires > now
+    )
+
+    plan_payload: dict[str, Any] | None = None
+    started_at: datetime | None = None
+    last_payment_at: datetime | None = None
+    async with db.async_session() as session:
+        if current_user.plan_id is not None:
+            plan = await session.get(SubscriptionPlan, current_user.plan_id)
+            if plan is not None:
+                plan_payload = {
+                    "id": plan.id,
+                    "name": plan.name,
+                    "price": str(plan.price) if plan.price is not None else None,
+                    "period_days": plan.period_days,
+                    "is_active": plan.is_active,
+                    "is_custom": plan.is_custom,
+                    "limits": plan.limits,
+                    "features": plan.features,
+                }
+        stmt = select(
+            func.min(PaymentEvent.received_at),
+            func.max(PaymentEvent.received_at),
+        ).where(
+            PaymentEvent.user_id == current_user.id,
+            PaymentEvent.event_type.in_(["payment_success", "recurrent_success"]),
+        )
+        started_at, last_payment_at = (await session.execute(stmt)).one()
+
+    def _iso(value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+
+    trial_used_at = current_user.trial_used_at
+    if trial_used_at is not None and trial_used_at.tzinfo is None:
+        trial_used_at = trial_used_at.replace(tzinfo=timezone.utc)
+
+    return {
+        "status": current_user.subscription_status,
+        "is_active": bool(is_active),
+        "plan": plan_payload,
+        "registered_at": _iso(current_user.created_at),
+        "started_at": _iso(started_at) or _iso(trial_used_at),
+        "last_payment_at": _iso(last_payment_at),
+        "expires_at": _iso(expires),
+        "auto_renew": bool(current_user.gateway_subscription_id),
+        "billing_email": current_user.billing_email,
+        "trial_used": trial_used_at is not None,
+        "trial_available": trial_used_at is None and current_user.subscription_status != "active",
+    }
+
+
+@router.post("/trial/activate")
+async def activate_trial(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Активация бесплатного пробного периода (14 дней, без карты), один раз на аккаунт."""
+    from src.utils.rate_limiter import check_rate_limit
+
+    await check_rate_limit(request, max_requests=5, window_seconds=3600, key_extra=f"user:{current_user.id}")
+
+    if current_user.subscription_status == "active" and current_user.subscription_expires_at:
+        expires = current_user.subscription_expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires > datetime.now(timezone.utc):
+            raise HTTPException(status_code=409, detail="У вас уже активна платная подписка")
+    if current_user.trial_used_at is not None:
+        raise HTTPException(status_code=409, detail="Пробный период уже использован")
+
+    async with db.async_session() as session:
+        trial_plan = (
+            await session.execute(select(SubscriptionPlan).where(SubscriptionPlan.name == "trial"))
+        ).scalar_one_or_none()
+        period_days = (trial_plan.period_days if trial_plan else None) or 14
+
+        db_user = await session.get(User, current_user.id)
+        if db_user is None:
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+        now = datetime.now(timezone.utc)
+        db_user.subscription_status = "trial"
+        db_user.subscription_expires_at = now + timedelta(days=period_days)
+        db_user.trial_used_at = now
+        if trial_plan is not None:
+            db_user.plan_id = trial_plan.id
+        await session.commit()
+        expires_iso = db_user.subscription_expires_at.isoformat()
+
+    logger.info("Trial activated for user %s until %s", current_user.id, expires_iso)
+    return {"ok": True, "expires_at": expires_iso, "period_days": period_days}
+
+
 @router.get("/checkout-url")
 async def checkout_url(
     plan: str = "basic",
@@ -384,6 +535,101 @@ async def checkout_url(
     url = f"{db_plan.payment_url}{separator}accountId={current_user.id}&data={quote(data_param)}"
     logger.info("Checkout URL issued for user %s, plan %s", current_user.id, db_plan.name)
     return {"url": url}
+
+
+@router.post("/public-checkout-url")
+async def public_checkout_url(
+    payload: PublicCheckoutRequest,
+    request: Request,
+    db: Database = Depends(get_db),
+) -> dict[str, str]:
+    """Покупка без регистрации: привязка платежа по email, аккаунт создаётся вебхуком."""
+    from src.utils.rate_limiter import check_rate_limit
+
+    await check_rate_limit(request, max_requests=10, window_seconds=3600)
+
+    async with db.async_session() as session:
+        stmt = select(SubscriptionPlan).where(SubscriptionPlan.name == payload.plan)
+        db_plan = (await session.execute(stmt)).scalar_one_or_none()
+    if db_plan is None:
+        raise HTTPException(status_code=404, detail="Тариф не найден")
+    if not db_plan.is_active:
+        raise HTTPException(status_code=409, detail="Тариф временно недоступен")
+    if db_plan.is_custom:
+        raise HTTPException(status_code=409, detail="По этому тарифу нужно связаться с менеджером")
+    if not db_plan.payment_url:
+        raise HTTPException(status_code=503, detail="Форма оплаты не настроена")
+    separator = "&" if "?" in db_plan.payment_url else "?"
+    data_param = json.dumps({"plan": db_plan.name, "email": payload.email}, separators=(",", ":"))
+    from urllib.parse import quote
+
+    url = f"{db_plan.payment_url}{separator}email={quote(payload.email)}&data={quote(data_param)}"
+    logger.info("Public checkout URL issued for plan %s", db_plan.name)
+    return {"url": url}
+
+
+@router.post("/cancel-subscription")
+async def cancel_subscription(
+    payload: CancelSubscriptionRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Отмена автопродления с подтверждением паролем. Доступ сохраняется до конца периода."""
+    settings = request.app.state.settings
+
+    if not current_user.password_hash:
+        raise HTTPException(
+            status_code=409,
+            detail="У вашего аккаунта нет пароля (вход через VK ID / Yandex ID). Напишите на support@collabrama.ru — отключим автопродление вручную.",
+        )
+    if not verify_password(payload.password, current_user.password_hash):
+        raise HTTPException(status_code=403, detail="Неверный пароль")
+    if not current_user.gateway_subscription_id:
+        raise HTTPException(status_code=409, detail="Автопродление уже отключено")
+    if not settings.cloudpayments_public_id or not settings.cloudpayments_secret_key:
+        raise HTTPException(status_code=503, detail="Отмена подписки временно недоступна. Напишите на support@collabrama.ru")
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://api.cloudpayments.ru/subscriptions/cancel",
+                auth=(settings.cloudpayments_public_id, settings.cloudpayments_secret_key),
+                json={"Id": current_user.gateway_subscription_id},
+            )
+    except httpx.HTTPError:
+        logger.exception("CloudPayments cancel: network error, user %s", current_user.id)
+        raise HTTPException(status_code=502, detail="Платёжный шлюз недоступен. Попробуйте позже.")
+
+    try:
+        result = resp.json()
+    except ValueError:
+        result = {}
+
+    if resp.status_code != 200 or not result.get("Success"):
+        message = result.get("Message") if isinstance(result.get("Message"), str) else None
+        logger.warning(
+            "CloudPayments cancel failed: user=%s status=%s message=%s",
+            current_user.id, resp.status_code, message,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=message or "Платёжный шлюз отклонил отмену. Попробуйте позже или напишите в поддержку.",
+        )
+
+    async with db.async_session() as session:
+        db_user = await session.get(User, current_user.id)
+        if db_user is not None:
+            db_user.gateway_subscription_id = None
+            await session.commit()
+
+    logger.info("Subscription auto-renew cancelled for user %s", current_user.id)
+    return {
+        "ok": True,
+        "expires_at": current_user.subscription_expires_at.isoformat() if current_user.subscription_expires_at else None,
+    }
 
 
 @router.get("/admin/payment-events")

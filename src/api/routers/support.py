@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import delete as sa_delete, func, select, update as sa_update
 from sqlalchemy.exc import IntegrityError
 
-from src.api.dependencies import get_db, get_optional_user, require_admin
+from src.api.dependencies import get_current_user, get_db, get_optional_user, require_admin
 from src.api.schemas import (
     SUPPORT_TICKET_CATEGORIES,
     SUPPORT_TICKET_STATUSES,
@@ -79,6 +79,42 @@ async def create_support_ticket(
             raise HTTPException(status_code=500, detail="Не удалось создать обращение") from exc
         await session.refresh(ticket)
         return build_ticket_item(ticket)
+
+
+@router.get("/my-tickets", response_model=list[SupportTicketItem])
+async def list_my_tickets(
+    db: Database = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[SupportTicketItem]:
+    """Обращения текущего пользователя (раздел «Поддержка» в CRM)."""
+    async with db.async_session() as session:
+        stmt = (
+            select(Ticket)
+            .where(Ticket.user_id == current_user.id)
+            .order_by(Ticket.created_at.desc(), Ticket.id.desc())
+            .limit(100)
+        )
+        tickets = (await session.execute(stmt)).scalars().all()
+    return [build_ticket_item(ticket) for ticket in tickets]
+
+
+@router.get("/my-tickets/{ticket_id}", response_model=SupportTicketDetail)
+async def get_my_ticket(
+    ticket_id: int,
+    db: Database = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SupportTicketDetail:
+    async with db.async_session() as session:
+        stmt = select(Ticket).where(Ticket.id == ticket_id, Ticket.user_id == current_user.id)
+        ticket = (await session.execute(stmt)).scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+    return SupportTicketDetail(
+        **build_ticket_item(ticket).model_dump(),
+        description=ticket.description,
+        page_url=ticket.page_url,
+        user_agent=ticket.user_agent,
+    )
 
 
 @router.get("/tickets", response_model=SupportTicketListResponse)

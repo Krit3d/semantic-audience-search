@@ -36,7 +36,8 @@ function getRedirectTarget(): string | null {
 }
 
 export default function LoginModal({ onLogin }: { onLogin: (user: Record<string, unknown>) => void }) {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const trialIntent = new URLSearchParams(window.location.search).get('intent') === 'trial';
+  const [mode, setMode] = useState<'login' | 'register'>(trialIntent ? 'register' : 'login');
   const [forgot, setForgot] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [email, setEmail] = useState('');
@@ -106,6 +107,11 @@ export default function LoginModal({ onLogin }: { onLogin: (user: Record<string,
         window.location.href = target.toString();
         return;
       }
+      if (trialIntent) {
+        // Если триал уже использован или подписка активна, API вернёт 409:
+        // после входа пользователь увидит актуальное состояние доступа.
+        await api.activateTrial().catch(() => undefined);
+      }
       onLogin(data.user);
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : 'Не удалось выполнить операцию. Проверьте подключение к серверу');
@@ -121,8 +127,8 @@ export default function LoginModal({ onLogin }: { onLogin: (user: Record<string,
           <div className="flex items-center gap-3 mb-8">
             <span className="w-11 h-11 rounded-2xl bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30"><Zap size={22} /></span>
             <div>
-              <div className="text-[19px] font-extrabold font-display text-gray-900 leading-none">CreatorFlow</div>
-              <div className="text-[11px] font-bold text-gray-400 mt-1 tracking-wide uppercase">Influence CRM</div>
+              <div className="text-[19px] font-extrabold font-display text-gray-900 leading-none">Collabrama CRM</div>
+              <div className="text-[11px] font-medium text-gray-400 mt-1">CRM для работы с авторами</div>
             </div>
           </div>
 
@@ -178,8 +184,14 @@ export default function LoginModal({ onLogin }: { onLogin: (user: Record<string,
             />
 
             <div>
-              <h1 className="text-[17px] font-bold text-gray-900">{mode === 'register' ? 'Создание аккаунта' : 'Вход в CRM'}</h1>
-              <p className="text-[12.5px] font-medium text-gray-400 mt-1">{mode === 'register' ? 'Получите персональный кабинет CreatorFlow' : 'Используйте учётную запись Twenty CRM'}</p>
+              <h1 className="text-[17px] font-bold text-gray-900 leading-snug break-words">{mode === 'register' && trialIntent ? 'Попробуйте Collabrama CRM бесплатно' : mode === 'register' ? 'Создание аккаунта' : 'Вход в Collabrama CRM'}</h1>
+              <p className="text-[12.5px] font-medium text-gray-400 mt-1 leading-relaxed">
+                {mode === 'register' && trialIntent
+                  ? '14 дней полного доступа. Банковская карта не нужна, автоматического списания не будет.'
+                  : mode === 'register'
+                    ? 'Создайте персональный кабинет Collabrama CRM'
+                    : 'Используйте email и пароль от вашего аккаунта'}
+              </p>
             </div>
 
             {mode === 'register' && (
@@ -250,7 +262,9 @@ export default function LoginModal({ onLogin }: { onLogin: (user: Record<string,
 
             <Btn type="submit" disabled={busy} className="w-full justify-center">
               {busy ? <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" /> : <LogIn size={15} />}
-              {busy ? (mode === 'register' ? 'Регистрируем…' : 'Входим…') : (mode === 'register' ? 'Зарегистрироваться' : 'Войти')}
+              {busy
+                ? (mode === 'register' ? 'Создаём аккаунт…' : 'Входим…')
+                : (mode === 'register' && trialIntent ? 'Создать аккаунт и начать триал' : mode === 'register' ? 'Зарегистрироваться' : 'Войти')}
             </Btn>
 
             {mode === 'login' && (
@@ -287,17 +301,17 @@ export default function LoginModal({ onLogin }: { onLogin: (user: Record<string,
           </form>
           )}
 
-          <p className="text-[11.5px] font-medium text-gray-400 mt-5 text-center">{mode === 'register' ? 'После регистрации вы попадёте в свой персональный кабинет' : 'Доступ предоставляется администратором Twenty CRM'}</p>
+          <p className="text-[11.5px] font-medium text-gray-400 mt-5 text-center">{mode === 'register' ? 'После регистрации вы попадёте в свой персональный кабинет' : 'Войдите, чтобы продолжить работу с авторами'}</p>
         </div>
       </div>
 
       <div className="hidden lg:flex w-[420px] shrink-0 bg-gradient-to-br from-indigo-600 via-indigo-500 to-violet-600 relative overflow-hidden">
         <div className="absolute inset-0 opacity-15" style={{ background: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,.6), transparent 45%), radial-gradient(circle at 85% 75%, rgba(255,255,255,.5), transparent 40%)' }} />
         <div className="relative p-8 flex flex-col gap-6">
-          <div className="text-[13px] font-bold text-white/80 uppercase tracking-widest">CreatorFlow</div>
+          <div className="text-[13px] font-bold text-white/80 uppercase tracking-widest">Collabrama CRM</div>
           <div className="text-[26px] font-display font-semibold text-white leading-snug">Шортлист авторов, сделки и аналитика в одном окне</div>
           <div className="flex flex-col gap-3 text-[13px] font-semibold text-white/90">
-            <span className="flex items-center gap-2.5"><span className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center text-[12px]">1</span>Реальные авторы из Twenty CRM</span>
+            <span className="flex items-center gap-2.5"><span className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center text-[12px]">1</span>Единая база авторов и контактов</span>
             <span className="flex items-center gap-2.5"><span className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center text-[12px]">2</span>Статусы и охваты в реальном времени</span>
             <span className="flex items-center gap-2.5"><span className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center text-[12px]">3</span>Воронка сделок и ERID-реестр</span>
           </div>

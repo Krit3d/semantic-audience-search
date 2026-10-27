@@ -45,8 +45,8 @@ export default function ResetPasswordScreen({ token }: { token: string }) {
           <div className="flex items-center gap-3 mb-8">
             <span className="w-11 h-11 rounded-2xl bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30"><Zap size={22} /></span>
             <div>
-              <div className="text-[19px] font-extrabold font-display text-gray-900 leading-none">CreatorFlow</div>
-              <div className="text-[11px] font-bold text-gray-400 mt-1 tracking-wide uppercase">Influence CRM</div>
+              <div className="text-[19px] font-extrabold font-display text-gray-900 leading-none">Collabrama CRM</div>
+              <div className="text-[11px] font-medium text-gray-400 mt-1">CRM для работы с авторами</div>
             </div>
           </div>
 

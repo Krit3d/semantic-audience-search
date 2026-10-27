@@ -14,6 +14,7 @@ from src.api.schemas import CancelSubscriptionRequest, PublicCheckoutRequest
 from src.api.services.cloudpayments_signature import verify_signature
 from src.db.database import Database
 from src.db.models import PaymentEvent, SubscriptionPlan, User
+from src.utils.billing import has_access
 from src.utils.security import verify_password
 
 logger = logging.getLogger(__name__)
@@ -413,10 +414,11 @@ async def subscription_status(
     expires = current_user.subscription_expires_at
     if expires is not None and expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
-    is_active = (
-        current_user.subscription_status == "active"
-        and expires is not None
-        and expires > now
+    # is_active describes actual product access, including an unexpired trial.
+    is_active = current_user.is_admin or has_access(
+        current_user.subscription_status,
+        expires,
+        now,
     )
 
     plan_payload: dict[str, Any] | None = None

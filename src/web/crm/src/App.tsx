@@ -535,6 +535,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!authed) return;
+    api.getSubscription()
+      .then(subscription => setPaywall(!subscription.is_active && user?.is_admin !== true))
+      .catch(() => undefined);
+  }, [authed, user?.is_admin]);
+
+  useEffect(() => {
     (window as unknown as { cfSupportFloating?: (show: boolean) => void }).cfSupportFloating?.(!authed);
   }, [authed]);
 
@@ -570,6 +577,7 @@ export default function App() {
     api.logout();
     setUser(null);
     setAuthed(false);
+    setPaywall(false);
     window.location.hash = '#/authors';
   };
 
@@ -577,7 +585,7 @@ export default function App() {
 
   return (
     <ToastProvider>
-      {authed ? (paywall ? <PaywallScreen /> : <Shell key={String(user?.id ?? user?.email ?? 'guest')} user={user} onLogout={handleLogout} />) : (
+      {authed ? (paywall ? <PaywallScreen onLogout={handleLogout} /> : <Shell key={String(user?.id ?? user?.email ?? 'guest')} user={user} onLogout={handleLogout} />) : (
         resetToken ? <ResetPasswordScreen token={resetToken} /> : <LoginModal onLogin={handleLogin} />
       )}
       <CookieConsent />

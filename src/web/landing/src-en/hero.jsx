@@ -1,7 +1,7 @@
 import React from "react";
 import { I } from "../src/icons.jsx";
 import { HeroProductMockup } from "../src/mockups.jsx";
-import { getCrmLoginUrl, isAuthenticated } from "../src/auth.js";
+import { getCrmLoginUrl, getCrmTrialUrl, isAuthenticated } from "../src/auth.js";
 // Header + Hero with interactive search → loading → results.
 
 const Header = ({ onSearch }) => {
@@ -37,7 +37,7 @@ const Header = ({ onSearch }) => {
                  className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-ink-700 hover:text-ink-900 rounded-full px-3 py-1.5 transition-colors">
                 Log in
               </a>
-              <a href={getCrmLoginUrl()}
+              <a href={getCrmTrialUrl()}
                  className="btn-primary inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-4 py-1.5">
                 Sign up
               </a>

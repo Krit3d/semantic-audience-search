@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Lock, Zap } from 'lucide-react';
+import { Check, Lock, LogOut, Zap } from 'lucide-react';
 import { api, legalUrl, type SubscriptionPlanItem, type SubscriptionStatusInfo } from '../services/api';
 import { Btn } from '../components/ui';
 import { FEATURE_TITLES, fmtPrice, planTitle } from './pricing/planMeta';
@@ -90,7 +90,7 @@ function PlanCard({ plan, onPay }: { plan: SubscriptionPlanItem; onPay: (name: s
   );
 }
 
-export default function PaywallScreen() {
+export default function PaywallScreen({ onLogout }: { onLogout: () => void }) {
   const [plans, setPlans] = useState<SubscriptionPlanItem[]>([]);
   const [sub, setSub] = useState<SubscriptionStatusInfo | null>(null);
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>('loading');
@@ -108,24 +108,29 @@ export default function PaywallScreen() {
 
   useEffect(load, []);
 
-  // Подробности и оплата — на публичной странице тарифов.
   const handlePay = (_planName: string) => {
     window.location.href = PUBLIC_PRICING_URL;
   };
 
+  const trialExpired = sub?.status === 'trial' && sub.trial_used && !sub.is_active;
+  const paidAccessExpired = !sub?.is_active && ['active', 'past_due', 'expired'].includes(sub?.status ?? '');
+  const title = trialExpired
+    ? 'Пробный период закончился'
+    : paidAccessExpired
+      ? 'Период подписки закончился'
+      : 'Начните работу с Collabrama CRM';
+  const description = trialExpired || paidAccessExpired
+    ? 'Доступ к функциям и данным временно приостановлен. Авторы, сделки и переписки сохранены и снова станут доступны после оформления подписки.'
+    : 'Активируйте 14 дней бесплатно без карты или выберите тариф. После пробного периода ничего не спишется автоматически.';
+
   return (
-    <div className="h-full flex items-center justify-center bg-slate-50 overflow-y-auto">
-      <div className="max-w-[900px] w-full px-6 py-10 flex flex-col items-center gap-6">
-        <div className="text-center">
-          <div className="text-[24px] font-extrabold font-display text-gray-900">Подписка не активна</div>
-          <div className="text-[13.5px] font-semibold text-gray-400 mt-2">
-            Чтобы продолжить работу с CRM, активируйте бесплатный пробный период или выберите тариф.
-            Данные сохранены и никуда не денутся.
-          </div>
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 overflow-y-auto">
+      <div className="max-w-[900px] w-full px-5 sm:px-6 py-8 sm:py-10 flex flex-col items-center gap-6">
+        <div className="text-center max-w-[650px]">
+          <div className="text-[24px] font-extrabold font-display text-gray-900">{title}</div>
+          <div className="text-[13.5px] font-medium text-gray-500 mt-2 leading-relaxed">{description}</div>
         </div>
-        {status === 'loading' && (
-          <div className="text-[13px] font-semibold text-gray-400">Загружаем тарифы…</div>
-        )}
+        {status === 'loading' && <div className="text-[13px] font-semibold text-gray-400">Загружаем тарифы…</div>}
         {status === 'error' && (
           <div className="flex flex-col items-center gap-3">
             <div className="text-[13px] font-semibold text-red-400">Не удалось загрузить тарифы</div>
@@ -141,8 +146,8 @@ export default function PaywallScreen() {
             {plans.map(plan => <PlanCard key={plan.id} plan={plan} onPay={handlePay} />)}
           </div>
         )}
-        <div className="text-[11.5px] font-semibold text-gray-300">
-          После оплаты доступ откроется автоматически в течение минуты.
+        <div className="text-[11.5px] font-semibold text-gray-400 text-center">
+          После оплаты доступ восстановится автоматически в течение минуты.
         </div>
         <div className="text-[11.5px] font-medium text-gray-400 text-center max-w-[560px] leading-relaxed">
           Оплата банковской картой через CloudPayments. Подписка продлевается автоматически каждые 31 день,
@@ -150,6 +155,13 @@ export default function PaywallScreen() {
           Оплачивая, вы принимаете{' '}
           <a href={legalUrl('offer.html')} target="_blank" rel="noopener" className="text-indigo-500 underline underline-offset-2">Публичную оферту</a>
           {' '}(порядок возврата — раздел 7).
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-4 text-[12.5px] font-semibold">
+          <a href="mailto:support@collabrama.ru" className="text-indigo-600 hover:text-indigo-700">Написать в поддержку</a>
+          <a href={`${PUBLIC_PRICING_URL.replace(/\/pricing$/, '')}/landing`} className="text-gray-500 hover:text-gray-700">Вернуться на лендинг</a>
+          <button type="button" onClick={onLogout} className="inline-flex items-center gap-1.5 text-gray-500 hover:text-red-600">
+            <LogOut size={14} />Выйти из аккаунта
+          </button>
         </div>
       </div>
     </div>

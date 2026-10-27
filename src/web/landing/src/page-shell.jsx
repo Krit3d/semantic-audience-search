@@ -1,7 +1,7 @@
 import React from "react";
 import { I } from "./icons.jsx";
 import { Logo } from "./hero.jsx";
-import { getCrmLoginUrl, isAuthenticated } from "./auth.js";
+import { getCrmLoginUrl, getCrmTrialUrl, isAuthenticated } from "./auth.js";
 import { openCookieSettings } from "./cookie-consent.js";
 // Общий каркас публичных страниц лендинга (/pricing, /about, /contacts).
 
@@ -27,7 +27,7 @@ export function PageShell({ children }) {
             ) : (
               <>
                 <a href={getCrmLoginUrl()} className="inline-flex items-center text-[12.5px] font-semibold text-ink-700 hover:text-ink-900 rounded-full px-3 py-1.5 transition-colors">Войти</a>
-                <a href={getCrmLoginUrl()} className="btn-primary inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-4 py-1.5">
+                <a href={getCrmTrialUrl()} className="btn-primary inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-4 py-1.5">
                   Попробовать <I.Arrow size={13} />
                 </a>
               </>

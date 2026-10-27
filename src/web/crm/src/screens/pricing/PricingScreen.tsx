@@ -28,8 +28,8 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
 };
 
 function statusMeta(sub: SubscriptionStatusInfo): { label: string; cls: string } {
+  if (sub.status === 'trial' && sub.is_active) return STATUS_META.trial;
   if (sub.is_active) return STATUS_META.active;
-  if (sub.status === 'trial') return STATUS_META.trial;
   if (sub.expires_at) return STATUS_META.expired;
   return STATUS_META[sub.status] ?? { label: 'Не оформлена', cls: 'bg-gray-50 text-gray-500 border-gray-200' };
 }
@@ -161,8 +161,8 @@ function SubscriptionCard({ sub, onPay, onChanged }: { sub: SubscriptionStatusIn
   const [cancelOpen, setCancelOpen] = useState(false);
   const rows: { label: string; value: string }[] = [
     { label: 'Тариф', value: currentPlan ? planTitle(currentPlan.name) : sub.status === 'trial' ? 'Триал' : '—' },
-    { label: sub.is_active ? 'Оформлена' : 'Дата первой оплаты', value: fmtDate(sub.started_at ?? sub.registered_at) },
-    { label: sub.is_active ? 'Действует до' : 'Истекла', value: fmtDate(sub.expires_at) },
+    { label: sub.status === 'trial' ? 'Начат' : sub.is_active ? 'Оформлена' : 'Дата первой оплаты', value: fmtDate(sub.started_at ?? sub.registered_at) },
+    { label: sub.is_active ? 'Действует до' : 'Завершён', value: fmtDate(sub.expires_at) },
   ];
   if (sub.last_payment_at) rows.push({ label: 'Последнее списание', value: fmtDate(sub.last_payment_at) });
 
@@ -187,7 +187,9 @@ function SubscriptionCard({ sub, onPay, onChanged }: { sub: SubscriptionStatusIn
         ))}
       </div>
       <div className="mt-4 text-[12.5px] font-medium text-gray-500 leading-relaxed">
-        {sub.is_active ? (
+        {sub.is_active && sub.status === 'trial' ? (
+          <>У вас полный пробный доступ. Карта не привязана, автоматического списания в конце периода не будет.</>
+        ) : sub.is_active ? (
           <>
             Подписка продлевается автоматически каждый расчётный период
             {currentPlan ? ` (${fmtPeriod(currentPlan.period_days).replace('за ', '').replace('в ', '')} — ${fmtPrice(currentPlan.price)})` : ''}.
@@ -195,6 +197,8 @@ function SubscriptionCard({ sub, onPay, onChanged }: { sub: SubscriptionStatusIn
               ? 'Автопродление можно отключить кнопкой ниже — доступ сохранится до конца оплаченного периода.'
               : 'Автопродление отключено — доступ сохранится до конца оплаченного периода.'}
           </>
+        ) : sub.status === 'trial' && sub.trial_used ? (
+          <>Пробный период закончился. Выберите тариф ниже — данные и сделки сохранены и станут доступны сразу после оплаты.</>
         ) : (
           <>Подписка не активна. Выберите тариф ниже — данные и сделки сохранены и станут доступны сразу после оплаты.</>
         )}

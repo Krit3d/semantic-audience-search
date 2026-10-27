@@ -10,6 +10,10 @@ export function getCrmLoginUrl() {
   return `${getCrmUrl()}/#/login`;
 }
 
+export function getCrmTrialUrl() {
+  return `${getCrmUrl()}/?intent=trial#/login`;
+}
+
 export function isAuthenticated() {
   return document.cookie.split(/;\s*/).some((entry) => entry === "cf_auth=1");
 }

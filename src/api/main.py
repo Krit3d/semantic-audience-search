@@ -1,5 +1,6 @@
 """FastAPI application entry point with production-ready configuration."""
 
+import asyncio
 import logging
 import os
 import secrets
@@ -19,6 +20,7 @@ from starlette.responses import RedirectResponse, Response
 
 from src.api.routers import search, health, crm, support, billing
 from src.api.services.crm_client import TwentyCrmClient
+from src.api.services.trial_notifications import run_trial_reminder_loop
 from src.config.config import MEDIA_DIR, load_settings
 from src.db.database import Database
 from src.embeddings.qdrant_service import QdrantService
@@ -82,9 +84,15 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.crm_client = crm_client
 
+    reminder_task = asyncio.create_task(run_trial_reminder_loop(db, settings))
     logger.info("FastAPI application started successfully.")
     yield
 
+    reminder_task.cancel()
+    try:
+        await reminder_task
+    except asyncio.CancelledError:
+        pass
     await crm_client.aclose()
     await neo4j.close()
     await db.close()

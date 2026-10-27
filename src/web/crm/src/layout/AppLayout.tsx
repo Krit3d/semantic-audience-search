@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { KanbanSquare, MessageCircle, BarChart3, Users, LifeBuoy, LogOut, Search, Plus, ChevronRight, Zap, Globe, CreditCard, Cookie } from 'lucide-react';
 import { userName } from '../services/api';
+import TrialReminderBanner from '../components/TrialReminderBanner';
 
 export type NavId = 'deals' | 'comms' | 'analytics' | 'base' | 'settings' | 'tickets' | 'pricing' | 'support';
 
@@ -50,8 +51,8 @@ export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDe
             <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
           <div>
-            <div className="text-[15px] font-bold font-display text-ink leading-none">CreatorFlow</div>
-            <div className="text-[10px] font-bold text-muted mt-1 tracking-wide uppercase">Influence CRM</div>
+            <div className="text-[15px] font-bold font-display text-ink leading-none whitespace-nowrap">Collabrama CRM</div>
+            <div className="text-[10px] font-medium text-muted mt-1 leading-tight">CRM для работы с авторами</div>
           </div>
         </div>
 
@@ -151,6 +152,7 @@ export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDe
             <Plus size={16} />Новая сделка
           </button>
         </header>
+        <TrialReminderBanner onOpenPricing={() => onNavigate('pricing')} />
         <main className="flex-1 min-h-0 relative">{children}</main>
       </div>
     </div>

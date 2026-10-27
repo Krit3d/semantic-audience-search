@@ -346,7 +346,7 @@ function buildHeader() {
         <button class="header-crm-link" data-action="go-search" title="Поиск авторов — вы здесь" aria-label="Поиск авторов">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
         </button>
-        <a class="header-icon-btn" href="${escapeText(getCrmEntryUrl())}" title="Перейти в CreatorFlow" aria-label="Перейти в CreatorFlow">
+        <a class="header-icon-btn" href="${escapeText(getCrmEntryUrl())}" title="Перейти в Collabrama CRM" aria-label="Перейти в Collabrama CRM">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
         </a>
       </div>
@@ -368,7 +368,7 @@ function renderDock() {
     app.appendChild(dock);
   }
   dock.innerHTML = `
-    <button type="button" class="short-dock-btn" data-action="export-shortlist" title="Перейти в шорт-лист в CreatorFlow">
+    <button type="button" class="short-dock-btn" data-action="export-shortlist" title="Перейти в шорт-лист в Collabrama CRM">
       <span class="short-dock-icon">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="#6366f1" stroke="#6366f1" stroke-width="1.6" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
       </span>

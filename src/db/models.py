@@ -468,6 +468,14 @@ class User(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    trial_reminder_3d_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    trial_reminder_1d_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     plan_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("subscription_plans.id", ondelete="SET NULL"),

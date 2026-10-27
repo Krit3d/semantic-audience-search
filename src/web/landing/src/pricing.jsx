@@ -1,6 +1,6 @@
 import React from "react";
 import { I } from "./icons.jsx";
-import { getCrmLoginUrl } from "./auth.js";
+import { getCrmLoginUrl, getCrmTrialUrl } from "./auth.js";
 import { PageShell } from "./page-shell.jsx";
 // Публичная страница тарифов: доступна без регистрации, покупка — сразу со страницы.
 // Данные — из открытого API /billing/plans. Залогиненным (токен в localStorage) —
@@ -132,7 +132,7 @@ const TrialBanner = () => {
       </div>
       <div className="shrink-0">
         {state === "anon" && (
-          <a href={getCrmLoginUrl()} className="btn-primary inline-flex items-center gap-2 px-5 py-3 rounded-xl text-[14px] font-semibold">
+          <a href={getCrmTrialUrl()} className="btn-primary inline-flex items-center gap-2 px-5 py-3 rounded-xl text-[14px] font-semibold">
             Начать бесплатно <I.Arrow size={14} />
           </a>
         )}
@@ -203,7 +203,7 @@ const PlanCard = ({ plan, onPay, paying }) => {
         ) : disabled ? (
           <span className="btn-ghost w-full inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-[13.5px] font-semibold opacity-60">Временно недоступен</span>
         ) : isFree ? (
-          <a href={getCrmLoginUrl()} className="btn-primary w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-[13.5px] font-semibold">
+          <a href={getCrmTrialUrl()} className="btn-primary w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-[13.5px] font-semibold">
             Попробовать бесплатно <I.Arrow size={13} />
           </a>
         ) : (

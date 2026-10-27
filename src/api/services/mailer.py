@@ -49,7 +49,7 @@ async def send_email(settings, *, to: str, subject: str, text: str, html: str | 
 async def send_password_reset(settings, *, to: str, reset_url: str) -> None:
     text = (
         "Здравствуйте!\n\n"
-        "Вы запросили восстановление доступа к Collabrama / CreatorFlow CRM.\n"
+        "Вы запросили восстановление доступа к Collabrama CRM.\n"
         "Чтобы задать новый пароль, перейдите по ссылке (действует 1 час):\n\n"
         f"{reset_url}\n\n"
         "Если вы не запрашивали восстановление, просто проигнорируйте это письмо — "
@@ -59,7 +59,7 @@ async def send_password_reset(settings, *, to: str, reset_url: str) -> None:
     html = f"""\
 <html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1f2937">
   <p>Здравствуйте!</p>
-  <p>Вы запросили восстановление доступа к Collabrama / CreatorFlow CRM.</p>
+  <p>Вы запросили восстановление доступа к Collabrama CRM.</p>
   <p style="margin:24px 0">
     <a href="{reset_url}" style="background:#6366f1;color:#ffffff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:bold">Задать новый пароль</a>
   </p>
@@ -68,3 +68,29 @@ async def send_password_reset(settings, *, to: str, reset_url: str) -> None:
   <p>— Команда Collabrama</p>
 </body></html>"""
     await send_email(settings, to=to, subject="Collabrama — восстановление доступа", text=text, html=html)
+
+
+async def send_trial_expiration_reminder(settings, *, to: str, days: int, pricing_url: str) -> None:
+    period = "1 день" if days == 1 else f"{days} дня"
+    subject = f"Collabrama CRM — пробный период заканчивается через {period}"
+    text = (
+        "Здравствуйте!\n\n"
+        f"Пробный период Collabrama CRM заканчивается через {period}. "
+        "После его завершения доступ к функциям и данным будет временно приостановлен.\n\n"
+        "Ваши авторы, сделки и переписки сохранятся. Чтобы продолжить работу без перерыва, "
+        f"выберите тариф: {pricing_url}\n\n"
+        "Автоматического списания после пробного периода не будет.\n\n"
+        "— Команда Collabrama"
+    )
+    html = f"""\
+<html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1f2937">
+  <p>Здравствуйте!</p>
+  <p>Пробный период <strong>Collabrama CRM</strong> заканчивается через <strong>{period}</strong>. После его завершения доступ к функциям и данным будет временно приостановлен.</p>
+  <p>Ваши авторы, сделки и переписки сохранятся. Чтобы продолжить работу без перерыва, выберите тариф.</p>
+  <p style="margin:24px 0">
+    <a href="{pricing_url}" style="background:#6366f1;color:#ffffff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:bold">Выбрать тариф</a>
+  </p>
+  <p style="color:#6b7280;font-size:13px">Автоматического списания после пробного периода не будет.</p>
+  <p>— Команда Collabrama</p>
+</body></html>"""
+    await send_email(settings, to=to, subject=subject, text=text, html=html)

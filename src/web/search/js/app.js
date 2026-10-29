@@ -7,6 +7,12 @@ import {
 } from "./render.js";
 import { AppStore, DEFAULT_COUNTRIES } from "./store.js";
 
+const ESC_AMP = String.fromCharCode(38);
+const ESC_LT = String.fromCharCode(60);
+const ESC_GT = String.fromCharCode(62);
+const ESC_QUOT = String.fromCharCode(34);
+const ESC_APOS = String.fromCharCode(39);
+
 function getCrmBaseUrl() {
   const configured = window.__APP_CONFIG__?.crmUrl || window.__CRM_URL__ || "/crm/";
   const normalized = String(configured).trim().replace(/\/+$/, "");
@@ -812,12 +818,6 @@ function renderResults() {
   resultsEl.appendChild(grid);
   renderAuthorCards(filtered, grid, store);
 }
-
-const ESC_AMP = String.fromCharCode(38);
-const ESC_LT = String.fromCharCode(60);
-const ESC_GT = String.fromCharCode(62);
-const ESC_QUOT = String.fromCharCode(34);
-const ESC_APOS = String.fromCharCode(39);
 
 function escapeText(value) {
   return String(value ?? "")

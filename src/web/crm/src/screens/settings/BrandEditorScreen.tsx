@@ -1,21 +1,26 @@
-import { Check, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Empty, ErrorState, Select, SkeletonLines } from '../../components/kit';
 import { Btn, useToast } from '../../components/ui';
 import { api, type BrandItem, type BrandKb, type BrandPayType, type BrandProduct, type BrandRequisites, type EridRecord } from '../../services/api';
 
-type Tab = 'main' | 'product' | 'rules' | 'terms' | 'req' | 'erid';
+type Tab = 'main' | 'product' | 'rules' | 'terms';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'main', label: 'Основная информация' },
   { id: 'product', label: 'Продукт и УТП' },
   { id: 'rules', label: 'Правила для авторов' },
   { id: 'terms', label: 'Условия сотрудничества' },
-  { id: 'req', label: 'Реквизиты клиента' },
-  { id: 'erid', label: 'ERID' },
 ];
 
-const CATS = ['Красота и уход', 'Электроника', 'Спорт и одежда', 'E-commerce', 'Финансы', 'Еда и напитки', 'Сувениры и подарки', 'Другое'];
+const CATS = [
+  'Автомобили и транспорт', 'Бизнес, финансы и B2B', 'Здоровье и медицина',
+  'Ритейл и электронная коммерция', 'Путешествия и туризм', 'Еда и напитки',
+  'Развлечения, медиа и игры', 'Технологии и IT', 'Дом, семья и образ жизни',
+  'Образование и карьера', 'Спорт, хобби и досуг', 'Красота, мода и уход за собой',
+  'Недвижимость', 'Промышленность, строительство и сельское хозяйство',
+  'Государственный сектор и НКО', 'AI сервисы', 'Другое',
+];
 
 const REQ_FIELDS: { k: keyof BrandRequisites; label: string; ph: string; wide?: boolean }[] = [
   { k: 'company', label: 'Компания (юрлицо)', ph: 'ООО «Название»', wide: true },
@@ -23,9 +28,18 @@ const REQ_FIELDS: { k: keyof BrandRequisites; label: string; ph: string; wide?: 
   { k: 'kpp', label: 'КПП', ph: '9 цифр' },
   { k: 'ogrn', label: 'ОГРН', ph: '13 цифр' },
   { k: 'address', label: 'Юридический адрес', ph: 'индекс, город, улица, дом', wide: true },
-  { k: 'contact', label: 'Контактное лицо', ph: 'Имя, должность' },
-  { k: 'email', label: 'Почта для счетов и закрывающих', ph: 'почта' },
-  { k: 'phone', label: 'Телефон', ph: '+7 …' },
+  { k: 'account', label: 'Расчётный счёт', ph: '20 цифр' },
+  { k: 'bank', label: 'Банк', ph: 'Название банка' },
+  { k: 'bik', label: 'БИК', ph: '9 цифр' },
+  { k: 'correspondent_account', label: 'Корреспондентский счёт', ph: '20 цифр' },
+];
+
+const PAY_DEFAULTS: BrandPayType[] = [
+  { label: 'За фиксированную оплату', on: false, rate: 'Автор назначает цену, бренд соглашается или торгуется' },
+  { label: 'Фикс + просмотры', on: false, rate: 'Фиксированная оплата плюс оплата за каждую 1000 просмотров' },
+  { label: 'Только за просмотры', on: false, rate: 'Оплата за каждую 1000 просмотров' },
+  { label: 'Бартер', on: false, rate: 'Бренд предоставляет товар, автор создаёт и публикует контент' },
+  { label: 'На постоянной основе', on: false, rate: 'Регулярная оплата, возможные бонусы и договор на выбранный срок' },
 ];
 
 type Draft = {
@@ -50,8 +64,11 @@ const toDraft = (b: BrandItem): Draft => ({
     allowed: [...(b.kb?.allowed ?? [])],
     forbidden: [...(b.kb?.forbidden ?? [])],
     mentions: [...(b.kb?.mentions ?? [])],
-    pay_types: (b.kb?.pay_types ?? []).map(p => ({ ...p })),
+    pay_types: b.kb?.pay_types?.length ? b.kb.pay_types.map(p => ({ ...p })) : PAY_DEFAULTS.map(p => ({ ...p })),
     requisites: { ...(b.kb?.requisites ?? {}) },
+    product_url: b.kb?.product_url ?? '',
+    sku: b.kb?.sku ?? '',
+    gallery: [...(b.kb?.gallery ?? [])],
   },
 });
 
@@ -107,6 +124,29 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
     })
       .then(() => { setSaving(false); toast('ok', `Бренд «${draft.name}» сохранён`); })
       .catch(() => { setSaving(false); toast('err', 'Не удалось сохранить бренд'); });
+  };
+
+  const uploadGallery = async (files: FileList | null) => {
+    if (!draft || !files) return;
+    const selected = Array.from(files);
+    if (draft.kb.gallery.length + selected.length > 5) {
+      toast('err', 'Можно загрузить не более 5 изображений');
+      return;
+    }
+    if (selected.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024)) {
+      toast('err', 'Допустимы JPEG, PNG и WebP размером до 5 МБ');
+      return;
+    }
+    setSaving(true);
+    try {
+      const uploaded = await Promise.all(selected.map(file => api.uploadChatFile(file)));
+      putKb({ gallery: [...draft.kb.gallery, ...uploaded.map(item => item.media_url)] });
+      toast('ok', 'Изображения загружены. Сохраните изменения');
+    } catch {
+      toast('err', 'Не удалось загрузить изображения');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const requestErid = () => {
@@ -177,6 +217,9 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
 
       <div className="flex-1 min-h-0 overflow-y-auto scroll-thin p-6">
         <div className="max-w-[860px] mx-auto flex flex-col gap-4">
+          <div className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-[13.5px] font-semibold text-brand-700">
+            Следите за правильностью написания данных, так как мы их используем для автоматизации переговоров с авторами
+          </div>
           {tab === 'main' && (
             <section className="bg-white border border-line rounded-2xl p-[22px] flex flex-col gap-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -187,18 +230,52 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
                   <Select options={CATS.map(c => ({ v: c, label: c }))} value={draft.category || 'Другое'} onChange={v => put({ category: v })} label="Категория" width="100%" size="md" />
                 </div>
               </div>
-              <label className="flex flex-col gap-2 text-[13px] font-semibold text-gray-600">Описание бренда
-                <textarea rows={4} value={draft.desc} onChange={e => put({ desc: e.target.value })} placeholder="Чем занимается бренд, ключевые продукты" className={areaCls} />
+              <label className="flex flex-col gap-2 text-[13px] font-semibold text-gray-600">Описание бренда: уникальные особенности и позиционирование
+                <textarea rows={4} maxLength={5000} value={draft.desc} onChange={e => put({ desc: e.target.value })} placeholder="Чем занимается бренд, ключевые продукты" className={areaCls} />
               </label>
-              <label className="flex flex-col gap-2 text-[13px] font-semibold text-gray-600">Краткое описание для авторов
-                <input value={draft.kb.short} onChange={e => putKb({ short: e.target.value })} placeholder="Одна фраза о бренде" className={inputCls} />
-                <span className="text-[12px] font-medium text-gray-400">Одна строка — увидит автор в карточке сделки</span>
+              <label className="flex flex-col gap-2 text-[13px] font-semibold text-gray-600">Краткое описание для авторов контента
+                <textarea rows={3} maxLength={1000} value={draft.kb.short} onChange={e => putKb({ short: e.target.value })} placeholder="Коротко о бренде для автора" className={areaCls} />
               </label>
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3.5 border-t border-line pt-4">
+                {REQ_FIELDS.map(f => (
+                  <label key={f.k} className={'flex flex-col gap-2 text-[13px] font-semibold text-gray-600 ' + (f.wide ? 'col-span-full' : '')}>{f.label}
+                    <input value={draft.kb.requisites[f.k] ?? ''} onChange={e => putKb({ requisites: { ...draft.kb.requisites, [f.k]: e.target.value } })} placeholder={f.ph} className={inputCls + ' font-medium'} />
+                  </label>
+                ))}
+              </div>
             </section>
           )}
 
           {tab === 'product' && (
             <>
+              <section className="bg-white border border-line rounded-2xl p-[22px] flex flex-col gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="flex flex-col gap-2 text-[13px] font-semibold text-gray-600">Ссылка на продукт
+                    <input type="url" maxLength={2048} value={draft.kb.product_url} onChange={e => putKb({ product_url: e.target.value })} className={inputCls} />
+                  </label>
+                  <label className="flex flex-col gap-2 text-[13px] font-semibold text-gray-600">Артикул
+                    <input maxLength={255} value={draft.kb.sku} onChange={e => putKb({ sku: e.target.value })} className={inputCls} />
+                  </label>
+                </div>
+                <div className="flex flex-col gap-3">
+                  <div className="text-[13px] font-semibold text-gray-600">Студийные фотографии и рекламные материалы</div>
+                  <div className="flex flex-wrap gap-3">
+                    {draft.kb.gallery.map((url, index) => (
+                      <div key={url} className="relative w-24 h-24">
+                        <img src={url} alt={`Материал ${index + 1}`} className="w-24 h-24 rounded-xl object-cover border border-line" />
+                        <button type="button" aria-label="Удалить изображение" onClick={() => putKb({ gallery: draft.kb.gallery.filter((_, i) => i !== index) })} className="absolute -right-2 -top-2 w-6 h-6 rounded-full bg-white border border-line text-gray-500 flex items-center justify-center"><X size={12} /></button>
+                      </div>
+                    ))}
+                  </div>
+                  {draft.kb.gallery.length < 5 && (
+                    <label className="self-start inline-flex items-center gap-2 h-10 px-3.5 rounded-[10px] border border-brand-200 text-brand-600 text-[13px] font-bold cursor-pointer">
+                      <Upload size={15} />Загрузить изображения
+                      <input type="file" multiple accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => { void uploadGallery(e.target.files); e.target.value = ''; }} />
+                    </label>
+                  )}
+                  {draft.kb.gallery.length === 0 && <div className="text-[13px] text-muted">Загрузите до 5 изображений</div>}
+                </div>
+              </section>
               <div className="flex items-center justify-between gap-3">
                 <h3 className="m-0 text-[15px] font-bold text-ink">Карточки продуктов</h3>
                 <button type="button" onClick={() => { putKb({ products: [...draft.kb.products, { name: 'Новый продукт', desc: '', tags: [], hue: (draft.hue + 40 * (draft.kb.products.length + 1)) % 360 }] }); }}
@@ -301,15 +378,21 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
                           <input value={pt.label} onChange={e => upd({ label: e.target.value })} placeholder="Название типа оплаты"
                             className="w-[280px] max-w-full h-[34px] px-2.5 rounded-lg border border-line text-[14.5px] font-bold text-ink outline-none focus:border-brand-300" />
                         ) : (
-                          <span className={'text-[15px] font-bold ' + (pt.on ? 'text-ink' : 'text-muted')}>{pt.label}</span>
+                          <span className={'text-[15px] font-bold ' + (pt.on ? 'text-ink' : 'text-muted')}>{pt.on ? `${i + 1}. ` : ''}{pt.label}</span>
                         )}
                         {pt.def && pt.on && <span className="text-[12.5px] font-bold px-[9px] py-[3px] rounded-[7px] border border-brand-200 bg-brand-50 text-brand-700">по умолчанию</span>}
                       </div>
                       {pt.on && (
-                        <input value={pt.rate} onChange={e => upd({ rate: e.target.value })} placeholder="Ставка или условие"
-                          className="w-[360px] max-w-full h-[38px] px-3 rounded-[10px] border border-line text-[14px] text-ink outline-none focus:border-brand-300 focus:ring-[3px] focus:ring-brand-100" />
+                        <textarea rows={3} maxLength={2000} value={pt.rate} onChange={e => upd({ rate: e.target.value })} placeholder="Описание условий сотрудничества"
+                          className={areaCls + ' w-full'} />
                       )}
                     </div>
+                    {pt.on && (
+                      <div className="flex flex-col gap-1">
+                        <button type="button" disabled={i === 0} aria-label="Вверх" onClick={() => { const items = [...draft.kb.pay_types]; [items[i - 1], items[i]] = [items[i], items[i - 1]]; putKb({ pay_types: items }); }} className="w-8 h-8 rounded-lg border border-line flex items-center justify-center disabled:opacity-30"><ArrowUp size={14} /></button>
+                        <button type="button" disabled={i === draft.kb.pay_types.length - 1} aria-label="Вниз" onClick={() => { const items = [...draft.kb.pay_types]; [items[i + 1], items[i]] = [items[i], items[i + 1]]; putKb({ pay_types: items }); }} className="w-8 h-8 rounded-lg border border-line flex items-center justify-center disabled:opacity-30"><ArrowDown size={14} /></button>
+                      </div>
+                    )}
                     {pt.on && !pt.def && (
                       <button type="button" onClick={() => putKb({ pay_types: draft.kb.pay_types.map((x, j) => ({ ...x, def: j === i })) })}
                         className="h-[34px] px-2.5 rounded-lg text-gray-600 text-[13.5px] font-semibold hover:bg-gray-100">По умолчанию</button>
@@ -331,35 +414,6 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
             </>
           )}
 
-          {tab === 'req' && (
-            <section className="bg-white border border-line rounded-2xl p-[22px] flex flex-col gap-4">
-              <div>
-                <h3 className="m-0 text-[15px] font-bold text-ink">Реквизиты клиента</h3>
-                <p className="m-0 mt-1 text-[13px] text-muted">Юрлицо, которое платит за размещения этого бренда. Подставляется в договоры и в ERID-маркировку (сторона бренда).</p>
-              </div>
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3.5">
-                {REQ_FIELDS.map(f => (
-                  <label key={f.k} className={'flex flex-col gap-2 text-[13px] font-semibold text-gray-600 ' + (f.wide ? 'col-span-full' : '')}>{f.label}
-                    <input value={draft.kb.requisites[f.k] ?? ''} onChange={e => putKb({ requisites: { ...draft.kb.requisites, [f.k]: e.target.value } })} placeholder={f.ph} className={inputCls + ' font-medium'} />
-                  </label>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {tab === 'erid' && (
-            <section className="bg-white border border-line rounded-2xl p-[22px] flex flex-col gap-3.5">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h3 className="m-0 text-[15px] font-bold text-ink">Маркеры бренда · {eridRecords.length}</h3>
-                <span className="text-[12px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">38-ФЗ</span>
-              </div>
-              <p className="m-0 text-[13.5px] leading-relaxed text-gray-600">Маркер выдаётся на конкретную сделку: бренд заполняет свою половину из «Реквизитов клиента», автор — свою. Обязательные упоминания из «Правил для авторов» попадут в бриф.</p>
-              <div className="flex flex-wrap gap-2">
-                <Btn onClick={requestErid}>Запросить ERID</Btn>
-                <Btn variant="secondary" onClick={onOpenRegistry}>Открыть реестр маркировки →</Btn>
-              </div>
-            </section>
-          )}
         </div>
       </div>
     </div>

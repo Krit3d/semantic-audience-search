@@ -369,7 +369,7 @@ export default function Authors({ deals, onOpenProfile, onNewDeal, onOpenComms }
                             <Avatar nick={a.nick} hue={a.hue} size={30} />
                             <span className="text-left">
                               <span className="block font-bold text-gray-800 group-hover:text-indigo-600">{a.title || a.nick}{a.source === 'manual' && <Badge tone="violet" className="ml-1.5">Вручную</Badge>}</span>
-                              <span className="block text-[10.5px] font-semibold text-gray-400">@{a.nick} · {dealsCount} сделок · ER {fmtER(a.er)}</span>
+                              <span className="block text-[10.5px] font-semibold text-gray-400">{a.social !== 'Instagram' && `@${a.nick} · `}{dealsCount} сделок · ER {fmtER(a.er)}</span>
                             </span>
                           </button>
                         </td>
@@ -426,6 +426,7 @@ export default function Authors({ deals, onOpenProfile, onNewDeal, onOpenComms }
         <Modal onClose={() => setShowAddModal(false)} w="max-w-lg">
           <div className="px-5 py-4 border-b border-gray-200">
             <h2 className="text-[16px] font-display font-semibold text-gray-900">Добавление автора вручную</h2>
+            <p className="mt-1 text-[12px] text-gray-500">Таблица с названными колонками, например: Платформа, Username, TG для рекламы, TG личный, Email, Tel</p>
           </div>
           <div className="px-5 py-4 space-y-4">
             <div className="flex items-center gap-3">

@@ -25,7 +25,7 @@ export interface DealMsg { id: string; from: 'author' | 'user' | 'system'; text:
 
 export interface Deal {
   id: string; title: string; brandId: string; authorId: string; budget: number;
-  type: 'Stories' | 'Reels' | 'Пост' | 'Видео';
+  type: 'Stories' | 'Reels' | 'Пост' | 'Видео' | 'Прямая трансляция';
   stage: number; date: string; pubDate: string;
   msgs: DealMsg[]; file?: string; erid?: string;
   desc: string; terms: string; exclusive: boolean; edits: number;

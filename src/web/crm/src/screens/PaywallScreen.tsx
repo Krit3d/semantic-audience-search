@@ -83,7 +83,7 @@ function PlanCard({ plan, onPay }: { plan: SubscriptionPlanItem; onPay: (name: s
         ) : disabled ? (
           <Btn variant="ghost" disabled>Временно недоступен</Btn>
         ) : (
-          <Btn onClick={() => onPay(plan.name)}>Подробнее и оплата</Btn>
+          <Btn onClick={() => onPay(plan.name)}>Оплатить</Btn>
         )}
       </div>
     </div>
@@ -94,6 +94,8 @@ export default function PaywallScreen({ onLogout }: { onLogout: () => void }) {
   const [plans, setPlans] = useState<SubscriptionPlanItem[]>([]);
   const [sub, setSub] = useState<SubscriptionStatusInfo | null>(null);
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>('loading');
+  const [payingPlan, setPayingPlan] = useState<string | null>(null);
+  const [payError, setPayError] = useState('');
 
   const load = () => {
     setStatus('loading');
@@ -108,8 +110,16 @@ export default function PaywallScreen({ onLogout }: { onLogout: () => void }) {
 
   useEffect(load, []);
 
-  const handlePay = (_planName: string) => {
-    window.location.href = PUBLIC_PRICING_URL;
+  const handlePay = async (planName: string) => {
+    if (payingPlan) return;
+    setPayingPlan(planName);
+    setPayError('');
+    try {
+      window.location.href = await api.getCheckoutUrl(planName);
+    } catch (err) {
+      setPayError(err instanceof Error && err.message ? err.message : 'Не удалось перейти к оплате');
+      setPayingPlan(null);
+    }
   };
 
   const trialExpired = sub?.status === 'trial' && sub.trial_used && !sub.is_active;
@@ -146,6 +156,7 @@ export default function PaywallScreen({ onLogout }: { onLogout: () => void }) {
             {plans.map(plan => <PlanCard key={plan.id} plan={plan} onPay={handlePay} />)}
           </div>
         )}
+        {payError && <div className="text-[13px] font-semibold text-red-500">{payError}</div>}
         <div className="text-[11.5px] font-semibold text-gray-400 text-center">
           После оплаты доступ восстановится автоматически в течение минуты.
         </div>

@@ -94,3 +94,24 @@ async def send_trial_expiration_reminder(settings, *, to: str, days: int, pricin
   <p>— Команда Collabrama</p>
 </body></html>"""
     await send_email(settings, to=to, subject=subject, text=text, html=html)
+
+
+async def send_registration_welcome(settings, *, to: str, search_url: str) -> None:
+    text = (
+        "Здравствуйте!\n\n"
+        "Ваш аккаунт Collabrama создан. Теперь вы можете искать авторов и управлять сотрудничеством.\n\n"
+        f"Начать работу: {search_url}\n\n"
+        "— Команда Collabrama"
+    )
+    await send_email(settings, to=to, subject="Добро пожаловать в Collabrama", text=text)
+
+
+async def send_trial_activated(settings, *, to: str, expires_at: str, search_url: str) -> None:
+    text = (
+        "Здравствуйте!\n\n"
+        f"Пробный период Collabrama активирован до {expires_at}. Банковская карта не привязана, "
+        "автоматического списания после завершения триала не будет.\n\n"
+        f"Начать поиск авторов: {search_url}\n\n"
+        "— Команда Collabrama"
+    )
+    await send_email(settings, to=to, subject="Пробный период Collabrama активирован", text=text)

@@ -890,10 +890,14 @@ class BrandRequisites(BaseModel):
     contact: str | None = None
     email: str | None = None
     phone: str | None = None
+    account: str | None = None
+    bank: str | None = None
+    bik: str | None = None
+    correspondent_account: str | None = None
 
 
 class BrandKb(BaseModel):
-    short: str = ""
+    short: str = Field(default="", max_length=1000)
     products: list[BrandProduct] = Field(default_factory=list)
     usp: list[str] = Field(default_factory=list)
     allowed: list[str] = Field(default_factory=list)
@@ -901,6 +905,9 @@ class BrandKb(BaseModel):
     mentions: list[str] = Field(default_factory=list)
     pay_types: list[BrandPayType] = Field(default_factory=list)
     requisites: BrandRequisites = Field(default_factory=BrandRequisites)
+    product_url: str = Field(default="", max_length=2048)
+    sku: str = Field(default="", max_length=255)
+    gallery: list[str] = Field(default_factory=list, max_length=5)
 
 
 class BrandItem(BaseModel):

@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from src.api.dependencies import get_current_user, get_db, require_admin
 from src.api.schemas import CancelSubscriptionRequest, PublicCheckoutRequest
 from src.api.services.cloudpayments_signature import verify_signature
+from src.api.services.mailer import MailerNotConfigured, send_trial_activated
 from src.db.database import Database
 from src.db.models import PaymentEvent, SubscriptionPlan, User
 from src.utils.billing import has_access
@@ -512,11 +513,24 @@ async def activate_trial(
         expires_iso = db_user.subscription_expires_at.isoformat()
 
     logger.info("Trial activated for user %s until %s", current_user.id, expires_iso)
+    settings = request.app.state.settings
+    try:
+        await send_trial_activated(
+            settings,
+            to=current_user.email,
+            expires_at=expires_iso,
+            search_url=f"{settings.search_frontend_url.rstrip('/')}/",
+        )
+    except MailerNotConfigured:
+        logger.error("Trial activated but SMTP is not configured")
+    except Exception:
+        logger.exception("Failed to send trial activation email to user %s", current_user.id)
     return {"ok": True, "expires_at": expires_iso, "period_days": period_days}
 
 
 @router.get("/checkout-url")
 async def checkout_url(
+    request: Request,
     plan: str = "basic",
     current_user: User = Depends(get_current_user),
     db: Database = Depends(get_db),
@@ -530,11 +544,29 @@ async def checkout_url(
         raise HTTPException(status_code=409, detail="Тариф временно недоступен")
     if not db_plan.payment_url:
         raise HTTPException(status_code=503, detail="Форма оплаты не настроена")
-    separator = "&" if "?" in db_plan.payment_url else "?"
-    data_param = json.dumps({"plan": db_plan.name}, separators=(",", ":"))
-    from urllib.parse import quote
+    from urllib.parse import urlencode
 
-    url = f"{db_plan.payment_url}{separator}accountId={current_user.id}&data={quote(data_param)}"
+    from src.utils.security import create_access_token
+
+    settings = request.app.state.settings
+    token = create_access_token(
+        {"sub": current_user.email, "user_id": current_user.id},
+        settings.secret_key,
+    )
+    return_params = urlencode({
+        "session_token": token,
+        "user_id": current_user.id,
+        "user_email": current_user.email,
+    })
+    success_url = f"{settings.crm_frontend_url.rstrip('/')}/?{return_params}#/search"
+    data_param = json.dumps({"plan": db_plan.name}, separators=(",", ":"))
+    query = urlencode({
+        "accountId": current_user.id,
+        "data": data_param,
+        "successUrl": success_url,
+    })
+    separator = "&" if "?" in db_plan.payment_url else "?"
+    url = f"{db_plan.payment_url}{separator}{query}"
     logger.info("Checkout URL issued for user %s, plan %s", current_user.id, db_plan.name)
     return {"url": url}
 
@@ -561,11 +593,13 @@ async def public_checkout_url(
         raise HTTPException(status_code=409, detail="По этому тарифу нужно связаться с менеджером")
     if not db_plan.payment_url:
         raise HTTPException(status_code=503, detail="Форма оплаты не настроена")
-    separator = "&" if "?" in db_plan.payment_url else "?"
-    data_param = json.dumps({"plan": db_plan.name, "email": payload.email}, separators=(",", ":"))
-    from urllib.parse import quote
+    from urllib.parse import urlencode
 
-    url = f"{db_plan.payment_url}{separator}email={quote(payload.email)}&data={quote(data_param)}"
+    success_url = f"{request.app.state.settings.search_frontend_url.rstrip('/')}/"
+    data_param = json.dumps({"plan": db_plan.name, "email": payload.email}, separators=(",", ":"))
+    query = urlencode({"email": payload.email, "data": data_param, "successUrl": success_url})
+    separator = "&" if "?" in db_plan.payment_url else "?"
+    url = f"{db_plan.payment_url}{separator}{query}"
     logger.info("Public checkout URL issued for plan %s", db_plan.name)
     return {"url": url}
 

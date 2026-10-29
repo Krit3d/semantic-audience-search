@@ -414,6 +414,10 @@ class Settings(BaseSettings):
         default="https://crm.collabrama.ru",
         description="Public URL of the CRM frontend interface",
     )
+    search_frontend_url: str = Field(
+        default="https://collabrama.ru",
+        description="Public URL of the author search interface",
+    )
     auth_cookie_domain: str = Field(
         default="",
         description="Domain attribute for the cf_auth routing cookie (e.g. .collabrama.ru); empty means host-only cookie",

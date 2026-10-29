@@ -37,6 +37,7 @@ CSS_FILE = WEB_DIR / "css" / "style.css"
 JS_FILE = WEB_DIR / "js" / "app.js"
 LANDING_DIR = Path(__file__).resolve().parent.parent / "web" / "landing" / "dist"
 LANDING_INDEX_FILE = LANDING_DIR / "index.html"
+LANDING_NEW_INDEX_FILE = LANDING_DIR / "new-landing" / "index.html"
 LANDING_EN_FILE = LANDING_DIR / "en.html"
 CSS_ASSET = "/css/style.css"
 JS_ASSET = "/js/app.js"
@@ -235,7 +236,12 @@ def _render_search_index(settings) -> HTMLResponse:
 
 
 def _render_landing(settings, page: str = "index") -> HTMLResponse | None:
-    landing_file = LANDING_EN_FILE if page == "en" else LANDING_INDEX_FILE
+    if page == "en":
+        landing_file = LANDING_EN_FILE
+    elif page == "app":
+        landing_file = LANDING_INDEX_FILE
+    else:
+        landing_file = LANDING_NEW_INDEX_FILE
     if not landing_file.exists():
         return None
     html = landing_file.read_text(encoding="utf-8")
@@ -280,7 +286,7 @@ async def landing_en(request: Request) -> HTMLResponse:
 async def pricing_page(request: Request) -> HTMLResponse:
     """Публичные страницы тарифов, «О нас» и «Контакты» (лендинг-приложение рендерит по пути)."""
     settings = request.app.state.settings
-    page = _render_landing(settings)
+    page = _render_landing(settings, page="app")
     if page is None:
         raise HTTPException(status_code=404, detail="Лендинг не собран")
     return page
@@ -304,6 +310,14 @@ if LANDING_ASSETS_DIR.exists():
         "/assets",
         StaticFiles(directory=str(LANDING_ASSETS_DIR)),
         name="landing-assets",
+    )
+
+NEW_LANDING_DIR = LANDING_DIR / "new-landing"
+if NEW_LANDING_DIR.exists():
+    app.mount(
+        "/new-landing",
+        StaticFiles(directory=str(NEW_LANDING_DIR), html=True),
+        name="new-landing-assets",
     )
 
 LEGAL_DIR = Path(__file__).resolve().parent.parent / "web" / "legal"

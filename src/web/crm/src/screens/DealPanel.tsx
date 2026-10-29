@@ -34,6 +34,8 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [edit, setEdit] = useState({ title: deal.title, brand: deal.brandId, budget: String(deal.budget), type: deal.type, pubDate: deal.pubDate, terms: deal.terms });
+  const [saving, setSaving] = useState(false);
   const tzKey = `creatorflow_tz_${deal.id}`;
   const [termsText, setTermsText] = useState(() => {
     try {
@@ -202,6 +204,31 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
     toast('ok', 'Ссылка на сделку скопирована');
   };
 
+  const saveDetails = async () => {
+    const budget = Number(edit.budget);
+    if (!edit.title.trim() || !Number.isFinite(budget) || budget < 0) {
+      toast('err', 'Проверьте название и бюджет сделки');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.updateDeal(Number(deal.id), {
+        title: edit.title.trim(),
+        brand_name: edit.brand,
+        budget,
+        type: edit.type,
+        pub_date: edit.pubDate || null,
+        terms: edit.terms,
+      });
+      onUpdate({ title: edit.title.trim(), brandId: edit.brand, budget, type: edit.type, pubDate: edit.pubDate, terms: edit.terms });
+      toast('ok', 'Сделка сохранена');
+    } catch {
+      toast('err', 'Не удалось сохранить сделку');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <SidePanel onClose={onClose} w="w-[640px]">
       {/* Шапка */}
@@ -263,14 +290,16 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
           <div className="p-5 flex flex-col gap-5 anim-in">
             <section>
               <h3 className="text-[12px] font-bold text-gray-400 uppercase tracking-wide mb-3">Информация о сделке</h3>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <Info label="Название" v={deal.title} />
-                <Info label="Бренд" v={<span className="flex items-center gap-2"><span className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-extrabold text-white" style={{ background: `hsl(${b.hue} 70% 50%)` }}>{b.letter}</span>{b.name}</span>} />
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-[12px] font-semibold text-gray-500">Название<input value={edit.title} onChange={e => setEdit({ ...edit, title: e.target.value })} className="mt-1 w-full h-9 px-2.5 rounded-lg border border-gray-200 text-[13px] text-gray-800" /></label>
+                <label className="text-[12px] font-semibold text-gray-500">Бренд<select value={edit.brand} onChange={e => setEdit({ ...edit, brand: e.target.value })} className="mt-1 w-full h-9 px-2.5 rounded-lg border border-gray-200 text-[13px] text-gray-800 bg-white">{!brands.some(brand => brand.name === edit.brand) && <option value={edit.brand}>{edit.brand}</option>}{brands.map(brand => <option key={brand.id} value={brand.name}>{brand.name}</option>)}</select></label>
                 <Info label="Автор" v={<button onClick={() => onOpenAuthor?.(deal.authorId)} className="flex items-center gap-2 hover:text-indigo-600 transition-colors"><Avatar nick={a.nick} hue={a.hue} size={22} /><SocialIcon social={a.social} size={12} />{a.nick}</button>} />
-                <Info label="Бюджет" v={<b className="text-[15px] font-extrabold">{fmtMoney(deal.budget)}</b>} />
-                <Info label="Тип контента" v={deal.type} />
-                <Info label="Дата публикации" v={deal.pubDate} />
+                <label className="text-[12px] font-semibold text-gray-500">Бюджет, ₽<input type="number" min="0" value={edit.budget} onChange={e => setEdit({ ...edit, budget: e.target.value })} className="mt-1 w-full h-9 px-2.5 rounded-lg border border-gray-200 text-[13px] text-gray-800" /></label>
+                <label className="text-[12px] font-semibold text-gray-500">Тип контента<select value={edit.type} onChange={e => setEdit({ ...edit, type: e.target.value as Deal['type'] })} className="mt-1 w-full h-9 px-2.5 rounded-lg border border-gray-200 text-[13px] text-gray-800 bg-white">{['Пост', 'Reels', 'Stories', 'Видео', 'Прямая трансляция'].map(value => <option key={value}>{value}</option>)}</select></label>
+                <label className="text-[12px] font-semibold text-gray-500">Дата публикации<input type="date" value={edit.pubDate} onChange={e => setEdit({ ...edit, pubDate: e.target.value })} className="mt-1 w-full h-9 px-2.5 rounded-lg border border-gray-200 text-[13px] text-gray-800" /></label>
               </div>
+              <label className="mt-3 block text-[12px] font-semibold text-gray-500">Условия<textarea rows={2} value={edit.terms} onChange={e => setEdit({ ...edit, terms: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-[13px] text-gray-800" /></label>
+              <Btn className="mt-3" onClick={() => { void saveDetails(); }} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить изменения'}</Btn>
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[12px] font-semibold text-gray-500">Описание · ТЗ</span>

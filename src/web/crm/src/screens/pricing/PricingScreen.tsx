@@ -12,8 +12,6 @@ import {
   planTitle,
 } from './planMeta';
 
-const PUBLIC_PRICING_URL = `${((import.meta.env.VITE_SEARCH_URL as string | undefined) || 'https://collabrama.ru').replace(/\/+$/, '')}/pricing`;
-
 const fmtDate = (iso: string | null): string => {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -287,6 +285,8 @@ export default function PricingScreen() {
   const [plans, setPlans] = useState<SubscriptionPlanItem[]>([]);
   const [sub, setSub] = useState<SubscriptionStatusInfo | null>(null);
   const [status, setStatus] = useState<'loading' | 'error' | 'ready'>('loading');
+  const [payingPlan, setPayingPlan] = useState<string | null>(null);
+  const [payError, setPayError] = useState('');
 
   const load = useCallback(() => {
     setStatus('loading');
@@ -297,9 +297,16 @@ export default function PricingScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  // «Оформить» ведёт на публичную страницу тарифов: там подробности о каждом плане и оплата.
-  const handlePay = (_planName: string) => {
-    window.location.href = PUBLIC_PRICING_URL;
+  const handlePay = async (planName: string) => {
+    if (payingPlan) return;
+    setPayingPlan(planName);
+    setPayError('');
+    try {
+      window.location.href = await api.getCheckoutUrl(planName);
+    } catch (err) {
+      setPayError(err instanceof Error && err.message ? err.message : 'Не удалось перейти к оплате');
+      setPayingPlan(null);
+    }
   };
 
   return (
@@ -325,6 +332,7 @@ export default function PricingScreen() {
           <>
             {sub && <SubscriptionCard sub={sub} onPay={handlePay} onChanged={load} />}
             {sub && <TrialBanner sub={sub} onActivated={load} />}
+            {payError && <div className="text-[13px] font-semibold text-red-500">{payError}</div>}
 
             <div className="rounded-2xl border border-gray-100 bg-white p-6">
               <div className="flex items-center gap-2.5">

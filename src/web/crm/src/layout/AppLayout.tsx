@@ -1,31 +1,14 @@
 import type { ReactNode } from 'react';
-import { KanbanSquare, MessageCircle, BarChart3, Users, LifeBuoy, LogOut, Search, Plus, ChevronRight, Zap, Globe, CreditCard, Cookie } from 'lucide-react';
+import { KanbanSquare, MessageCircle, BarChart3, LifeBuoy, LogOut, Search, ChevronRight, CreditCard, Cookie } from 'lucide-react';
 import { userName } from '../services/api';
 import TrialReminderBanner from '../components/TrialReminderBanner';
 
-export type NavId = 'deals' | 'comms' | 'analytics' | 'base' | 'settings' | 'tickets' | 'pricing' | 'support';
+export type NavId = 'search' | 'deals' | 'comms' | 'analytics' | 'base' | 'settings' | 'tickets' | 'pricing' | 'support';
 
 const SEARCH_HOME = ((import.meta.env.VITE_SEARCH_URL as string | undefined) || 'https://collabrama.ru').replace(/\/+$/, '');
 
-const openCollabramaSearch = (): void => {
-  const target = new URL(`${SEARCH_HOME}/`);
-  const token = window.localStorage.getItem('creatorflow_token');
-  if (token) {
-    target.searchParams.set('session_token', token);
-    try {
-      const raw = window.localStorage.getItem('creatorflow_user');
-      const user = raw ? JSON.parse(raw) as { id?: unknown; email?: unknown } : null;
-      if (user) {
-        if (user.id !== undefined && user.id !== null && String(user.id) !== '') target.searchParams.set('user_id', String(user.id));
-        if (typeof user.email === 'string' && user.email) target.searchParams.set('user_email', user.email);
-      }
-    } catch {
-    }
-  }
-  window.location.href = target.toString();
-};
-
 const NAV: { id: NavId; label: string; icon: ReactNode }[] = [
+  { id: 'search', label: 'Поиск авторов', icon: <Search size={20} strokeWidth={1.8} /> },
   { id: 'deals', label: 'Шорт-лист и сделки', icon: <KanbanSquare size={20} strokeWidth={1.8} /> },
   { id: 'comms', label: 'Коммуникации', icon: <MessageCircle size={20} strokeWidth={1.8} /> },
   { id: 'analytics', label: 'Аналитика', icon: <BarChart3 size={20} strokeWidth={1.8} /> },
@@ -46,7 +29,7 @@ export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDe
   return (
     <div className="h-screen flex bg-page text-ink overflow-hidden">
       <aside className="w-[240px] shrink-0 bg-white border-r border-line flex flex-col">
-        <div className="px-5 pt-5 pb-4 flex items-center gap-2.5">
+        <a href={`${SEARCH_HOME}/landing`} className="px-5 pt-5 pb-4 flex items-center gap-2.5" aria-label="Перейти на лендинг Collabrama">
           <svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="#6366f1" stroke="#6366f1" strokeWidth="1.6" strokeLinejoin="round">
             <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
@@ -54,7 +37,7 @@ export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDe
             <div className="text-[15px] font-bold font-display text-ink leading-none whitespace-nowrap">Collabrama CRM</div>
             <div className="text-[10px] font-medium text-muted mt-1 leading-tight">CRM для работы с авторами</div>
           </div>
-        </div>
+        </a>
 
         <nav aria-label="Разделы" className="px-3 pt-1 pb-3 flex flex-col gap-1">
           {NAV.map(m => {
@@ -69,18 +52,6 @@ export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDe
             );
           })}
         </nav>
-
-        <div className="px-3 pb-3">
-          <button type="button" onClick={() => onNavigate('base')}
-            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-colors ${
-              active === 'base' ? 'border-brand-300 bg-brand-50' : 'border-line bg-page hover:border-brand-200'}`}>
-            <span className={`w-8 h-8 rounded-[9px] shrink-0 flex items-center justify-center ${
-              active === 'base' ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-600'}`}>
-              <Users size={16} strokeWidth={1.8} />
-            </span>
-            <span className="text-[13.5px] font-bold text-ink">Моя база авторов</span>
-          </button>
-        </div>
 
         {isAdmin && (
           <div className="px-3 pb-2">
@@ -134,24 +105,6 @@ export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDe
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="h-[62px] shrink-0 bg-white border-b border-line-soft flex items-center justify-end gap-2 px-6">
-          <a href={`${SEARCH_HOME}/landing`} aria-label="Перейти на лендинг" title="О Collabrama — лендинг"
-            className="w-11 h-11 box-border rounded-xl border border-[#c7c9f5] bg-white text-brand-500 flex items-center justify-center hover:bg-brand-50 transition-colors">
-            <Globe size={18} />
-          </a>
-          <button type="button" onClick={openCollabramaSearch} aria-label="Поиск авторов" title="Поиск авторов в Collabrama"
-            className="w-11 h-11 box-border rounded-xl border border-[#c7c9f5] bg-white text-brand-500 flex items-center justify-center hover:bg-brand-50 transition-colors">
-            <Search size={18} />
-          </button>
-          <button type="button" onClick={() => onNavigate('deals')} aria-label="Шорт-лист и сделки" title="Шорт-лист и сделки"
-            className="w-11 h-11 box-border rounded-xl bg-brand-500 text-white flex items-center justify-center shadow-brand-sm hover:bg-brand-600 transition-colors">
-            <Zap size={18} />
-          </button>
-          <button type="button" onClick={onNewDeal}
-            className="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl bg-brand-500 text-white text-[13.5px] font-bold shadow-brand-sm hover:bg-brand-600 transition-colors active:scale-[.98]">
-            <Plus size={16} />Новая сделка
-          </button>
-        </header>
         <TrialReminderBanner onOpenPricing={() => onNavigate('pricing')} />
         <main className="flex-1 min-h-0 relative">{children}</main>
       </div>

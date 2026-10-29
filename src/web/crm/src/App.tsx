@@ -19,6 +19,7 @@ import CommsScreen from './screens/comms/CommsScreen';
 import PaywallScreen from './screens/PaywallScreen';
 import CookieConsent from './components/CookieConsent';
 import ResetPasswordScreen from './components/ResetPasswordScreen';
+import SearchScreen from './screens/SearchScreen';
 
 const resetTokenFromHash = (): string | null => {
   const hash = window.location.hash;
@@ -30,9 +31,9 @@ const resetTokenFromHash = (): string | null => {
 import PricingScreen from './screens/pricing/PricingScreen';
 import SupportScreen from './screens/SupportScreen';
 
-type Screen = 'kanban' | 'deals' | 'authors' | 'author' | 'comms' | 'settings' | 'brand' | 'analytics' | 'tickets' | 'pricing' | 'support';
+type Screen = 'search' | 'kanban' | 'deals' | 'authors' | 'author' | 'comms' | 'settings' | 'brand' | 'analytics' | 'tickets' | 'pricing' | 'support';
 
-const SCREENS: Screen[] = ['kanban', 'deals', 'authors', 'author', 'comms', 'settings', 'brand', 'analytics', 'tickets', 'pricing', 'support'];
+const SCREENS: Screen[] = ['search', 'kanban', 'deals', 'authors', 'author', 'comms', 'settings', 'brand', 'analytics', 'tickets', 'pricing', 'support'];
 
 const screenFromHash = (): Screen => {
   let seg = window.location.hash;
@@ -40,7 +41,7 @@ const screenFromHash = (): Screen => {
   if (seg.startsWith('/')) seg = seg.slice(1);
   const path = seg.split('?')[0];
   if (/^settings\/brands\/\d+/.test(path)) return 'brand';
-  return SCREENS.includes(path as Screen) ? (path as Screen) : 'authors';
+  return SCREENS.includes(path as Screen) ? (path as Screen) : 'search';
 };
 
 const brandIdFromHash = (): number | null => {
@@ -104,13 +105,13 @@ const dealIdFromHash = (): string | null => {
 };
 
 const NAV_BY_SCREEN: Record<Screen, NavId> = {
-  kanban: 'deals', deals: 'deals', comms: 'comms', analytics: 'analytics',
+  search: 'search', kanban: 'deals', deals: 'deals', comms: 'comms', analytics: 'analytics',
   authors: 'base', author: 'base', settings: 'settings', brand: 'settings', tickets: 'tickets',
   pricing: 'pricing', support: 'support',
 };
 
 const HASH_BY_NAV: Record<NavId, Screen> = {
-  deals: 'kanban', comms: 'comms', analytics: 'analytics', base: 'authors', settings: 'settings', tickets: 'tickets',
+  search: 'search', deals: 'kanban', comms: 'comms', analytics: 'analytics', base: 'authors', settings: 'settings', tickets: 'tickets',
   pricing: 'pricing', support: 'support',
 };
 
@@ -155,7 +156,7 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
     const sync = () => {
       const next = screenFromHash();
       if (window.location.hash === '' || window.location.hash === '#' || window.location.hash === '#/') {
-        window.location.hash = '#/authors';
+        window.location.hash = '#/search';
       }
       setBrandEditorId(brandIdFromHash());
       setScreen(next);
@@ -201,6 +202,7 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
   return (
     <AppLayout active={NAV_BY_SCREEN[screen]} user={user} isAdmin={isAdmin} onNavigate={handleNavigate}
       onLogout={onLogout} onNewDeal={() => setNewDeal({})}>
+      {screen === 'search' && <SearchScreen />}
       {(screen === 'kanban' || screen === 'deals') && <DealsScreen deals={deals} dealsStatus={dealsStatus} onRetryDeals={loadDeals} setDeals={setDeals} onOpenDeal={openDeal} onNewDeal={() => setNewDeal({})} onOpenComms={(authorId: string) => handleAuthorChat(String(authorId))} />}
       {screen === 'authors' && <Authors deals={deals} onOpenProfile={id => { setProfileId(id); setScreen('author'); }} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} onOpenComms={(authorId: string) => handleAuthorChat(String(authorId))} />}
       {screen === 'author' && <AuthorProfile authorId={profileId} deals={deals} onBack={() => setScreen('authors')} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} onOpenDeal={(id, tab) => openDeal(id, tab ?? 'comms')} onOpenComms={(id?: string) => handleAuthorChat(id ? String(id) : String(profileId))} />}

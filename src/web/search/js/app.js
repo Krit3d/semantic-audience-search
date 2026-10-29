@@ -346,7 +346,7 @@ function buildHeader() {
         <button class="header-crm-link" data-action="go-search" title="Поиск авторов — вы здесь" aria-label="Поиск авторов">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
         </button>
-        <a class="header-icon-btn" href="${escapeText(getCrmEntryUrl())}" title="Перейти в Collabrama CRM" aria-label="Перейти в Collabrama CRM">
+        <a class="header-icon-btn" href="${escapeText(getCrmEntryUrl())}" target="_parent" title="Перейти в Collabrama CRM" aria-label="Перейти в Collabrama CRM">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
         </a>
       </div>
@@ -1022,7 +1022,11 @@ async function exportToCrm(accountIds) {
   }
   const authParams = getCrmAuthParams();
   const targetUrl = `${getCrmBaseUrl()}/${authParams ? `?${authParams}` : ""}#/authors?import_ids=${ids.join(",")}`;
-  window.location.href = targetUrl;
+  if (window.parent !== window) {
+    window.parent.location.href = targetUrl;
+  } else {
+    window.location.href = targetUrl;
+  }
   showToast("Авторы экспортированы в CRM");
 }
 

@@ -180,7 +180,11 @@ class SecurityHeadersMiddleware:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
                 for header, value in SECURITY_HEADERS.items():
+                    if scope.get("path") == "/" and header == "X-Frame-Options":
+                        continue
                     headers[header] = value
+                if scope.get("path") == "/":
+                    headers["Content-Security-Policy"] = "frame-ancestors 'self' https://crm.collabrama.ru"
             await send(message)
 
         await self.app(scope, receive, send_wrapper)

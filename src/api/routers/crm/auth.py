@@ -14,7 +14,7 @@ from src.api.schemas import (
     CrmUserResponse,
 )
 from src.api.services.crm_client import TwentyCrmClient
-from src.api.services.mailer import MailerNotConfigured, send_password_reset
+from src.api.services.mailer import MailerNotConfigured, send_password_reset, send_registration_welcome
 from src.db.database import Database
 from src.db.models import User
 from src.utils.rate_limiter import rate_limit
@@ -152,6 +152,16 @@ async def crm_register(
         request.app.state.settings.secret_key,
     )
     _set_auth_cookie(response, request.app.state.settings)
+    try:
+        await send_registration_welcome(
+            request.app.state.settings,
+            to=user_email,
+            search_url=f"{request.app.state.settings.search_frontend_url.rstrip('/')}/",
+        )
+    except MailerNotConfigured:
+        logger.error("Registration completed but SMTP is not configured")
+    except Exception:
+        logger.exception("Failed to send registration email to user %s", user_id)
     return CrmLoginResponse(
         token=access_token,
         user={"id": user_id, "email": user_email, "name": user_name, "is_admin": user_is_admin},

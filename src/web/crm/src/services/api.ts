@@ -235,6 +235,10 @@ export interface BrandRequisites {
   contact?: string;
   email?: string;
   phone?: string;
+  account?: string;
+  bank?: string;
+  bik?: string;
+  correspondent_account?: string;
 }
 
 export interface BrandKb {
@@ -246,6 +250,9 @@ export interface BrandKb {
   mentions: string[];
   pay_types: BrandPayType[];
   requisites: BrandRequisites;
+  product_url: string;
+  sku: string;
+  gallery: string[];
 }
 
 export interface BrandItem {
@@ -466,7 +473,7 @@ async function request<T>(path: string, init: RequestInit = {}, baseUrl: string 
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const response = await fetch(`${baseUrl}${path}`, { ...init, headers });
-  if (response.status === 401) {
+  if (response.status === 401 && path !== '/auth/login') {
     api.logout();
     window.dispatchEvent(new CustomEvent('creatorflow:auth_expired'));
     throw new ApiError('Сессия истекла. Пожалуйста, войдите снова.', 401);

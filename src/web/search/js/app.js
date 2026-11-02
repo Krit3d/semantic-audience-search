@@ -138,7 +138,6 @@ function handleAuthGuard() {
     const queryStr = params.toString();
     const cleanUrl = `${window.location.pathname}${queryStr ? `?${queryStr}` : ""}${window.location.hash}`;
     window.history.replaceState(null, "", cleanUrl);
-    store.syncUserSession();
     return true;
   }
   if (localStorage.getItem("creatorflow_token")) {
@@ -1163,6 +1162,7 @@ async function loadDictionaries() {
 }
 
 if (authAllowed) {
+  store.syncUserSession();
   loadDictionaries();
   render();
   if (pendingSimilarIds.length > 0) {

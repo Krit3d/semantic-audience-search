@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Collabrama — умный подбор авторов на основе анализа контента</title>
 <meta name="description" content="Платформа для поиска релевантных авторов контента, массовых переговоров и управления influencer-кампаниями.">
-<link rel="icon" type="image/svg+xml" href="/new-landing/assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/static/assets/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&amp;family=Inter+Tight:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
 <style>
@@ -101,6 +101,8 @@ textarea::placeholder{color:#7A7690}
 }
 </style>
 <style>sc-if{display:contents}</style>
+<link rel="stylesheet" href="/static/assets/landing-fixes.css">
+<link rel="stylesheet" href="/static/assets/cookie-consent.css">
 </head>
 <body>
 <div id="app"></div>
@@ -606,7 +608,7 @@ textarea::placeholder{color:#7A7690}
           </nav>
           <nav aria-label="Cookie" style="display: flex; flex-direction: column; gap: 12px; min-width: 0">
             <a href="/legal/cookie.html" style="color: #D9D6E6; text-decoration: none; font-size: 15px; line-height: 1.4">Уведомление о cookie</a>
-            <a href="/legal/cookie.html" style="color: #D9D6E6; text-decoration: none; font-size: 15px; line-height: 1.4">Настройки cookie</a>
+            <button type="button" class="cookie-settings" style="padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; color: #D9D6E6; font: inherit; font-size: 15px; line-height: 1.4">Настройки cookie</button>
           </nav>
         </div>
       </div>
@@ -616,8 +618,9 @@ textarea::placeholder{color:#7A7690}
 
 </div>
 </template>
-<script src="/new-landing/assets/morphdom.min.js"></script>
-<script src="/new-landing/assets/runtime.js"></script>
+<script src="/static/assets/morphdom.min.js"></script>
+<script src="/static/assets/runtime.js"></script>
+<script src="/static/assets/landing-state.js"></script>
 <script>
 const PAINS = [
   { title: 'Поиск занимает часы', text: 'Авторов ищут через рекомендации, старые таблицы, ручной поиск по соцсетям и бесконечный скроллинг.' },
@@ -664,7 +667,7 @@ class Component extends DCLogic {
   }
   constructor(props) {
     super(props);
-    this.state = { pain: 0, hover: false, faq: -1, tick: 0, task: 0, tHover: false, tTick: 0, fx: 0, fxHover: false, fxTick: 0 };
+    this.state = Object.assign({ pain: 0, hover: false, faq: -1, tick: 0, task: 0, tHover: false, tTick: 0, fx: 0, fxHover: false, fxTick: 0 }, window.collabramaLandingInitialState || {}, { hover: false, tHover: false, fxHover: false });
   }
   renderVals() {
     const accent = this.props.accent ?? '#5A2DFF';
@@ -734,7 +737,8 @@ class Component extends DCLogic {
     };
   }
 }
-mountDC(Component, {"accent": "#5A2DFF"}, document.getElementById('app'), document.getElementById('tpl'));
+window.bindLandingState(mountDC(Component, {"accent": "#5A2DFF"}, document.getElementById('app'), document.getElementById('tpl')));
 </script>
+<script src="/static/assets/cookie-consent.js"></script>
 </body>
 </html>

@@ -869,6 +869,11 @@ class BrandProduct(BaseModel):
     desc: str = ""
     tags: list[str] = Field(default_factory=list)
     hue: int = 235
+    product_url: str = Field(default="", max_length=2048)
+    sku: str = Field(default="", max_length=255)
+    logo_url: str = Field(default="", max_length=2048)
+    gallery: list[str] = Field(default_factory=list, max_length=5)
+    selected_image: str = Field(default="", max_length=2048)
 
 
 class BrandPayType(BaseModel):
@@ -905,6 +910,7 @@ class BrandKb(BaseModel):
     mentions: list[str] = Field(default_factory=list)
     pay_types: list[BrandPayType] = Field(default_factory=list)
     requisites: BrandRequisites = Field(default_factory=BrandRequisites)
+    logo_url: str = Field(default="", max_length=2048)
     product_url: str = Field(default="", max_length=2048)
     sku: str = Field(default="", max_length=255)
     gallery: list[str] = Field(default_factory=list, max_length=5)

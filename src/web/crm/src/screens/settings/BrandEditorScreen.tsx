@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Check, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Image, Maximize2, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Empty, ErrorState, Select, SkeletonLines } from '../../components/kit';
 import { Btn, useToast } from '../../components/ui';
@@ -59,13 +59,22 @@ const toDraft = (b: BrandItem): Draft => ({
   desc: b.desc,
   kb: {
     short: b.kb?.short ?? '',
-    products: (b.kb?.products ?? []).map(p => ({ ...p, tags: [...p.tags] })),
+    products: (b.kb?.products ?? []).map((p, index) => ({
+      ...p,
+      tags: [...p.tags],
+      product_url: p.product_url ?? (index === 0 ? b.kb?.product_url ?? '' : ''),
+      sku: p.sku ?? (index === 0 ? b.kb?.sku ?? '' : ''),
+      logo_url: p.logo_url ?? '',
+      gallery: [...(p.gallery ?? (index === 0 ? b.kb?.gallery ?? [] : []))],
+      selected_image: p.selected_image ?? '',
+    })),
     usp: [...(b.kb?.usp ?? [])],
     allowed: [...(b.kb?.allowed ?? [])],
     forbidden: [...(b.kb?.forbidden ?? [])],
     mentions: [...(b.kb?.mentions ?? [])],
     pay_types: b.kb?.pay_types?.length ? b.kb.pay_types.map(p => ({ ...p })) : PAY_DEFAULTS.map(p => ({ ...p })),
     requisites: { ...(b.kb?.requisites ?? {}) },
+    logo_url: b.kb?.logo_url ?? '',
     product_url: b.kb?.product_url ?? '',
     sku: b.kb?.sku ?? '',
     gallery: [...(b.kb?.gallery ?? [])],
@@ -90,6 +99,8 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
   const [tab, setTab] = useState<Tab>('main');
   const [tagFor, setTagFor] = useState<number | null>(null);
   const [tagDraft, setTagDraft] = useState('');
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [galleryFor, setGalleryFor] = useState<number | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -126,27 +137,50 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
       .catch(() => { setSaving(false); toast('err', 'Не удалось сохранить бренд'); });
   };
 
-  const uploadGallery = async (files: FileList | null) => {
-    if (!draft || !files) return;
+  const putProduct = (index: number, patch: Partial<BrandProduct>) => {
+    if (!draft) return;
+    putKb({ products: draft.kb.products.map((product, i) => i === index ? { ...product, ...patch } : product) });
+  };
+
+  const uploadFiles = async (files: FileList | null): Promise<string[] | null> => {
+    if (!files) return null;
     const selected = Array.from(files);
-    if (draft.kb.gallery.length + selected.length > 5) {
-      toast('err', 'Можно загрузить не более 5 изображений');
-      return;
-    }
     if (selected.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024)) {
       toast('err', 'Допустимы JPEG, PNG и WebP размером до 5 МБ');
-      return;
+      return null;
     }
     setSaving(true);
     try {
       const uploaded = await Promise.all(selected.map(file => api.uploadChatFile(file)));
-      putKb({ gallery: [...draft.kb.gallery, ...uploaded.map(item => item.media_url)] });
-      toast('ok', 'Изображения загружены. Сохраните изменения');
+      return uploaded.map(item => item.media_url);
     } catch {
       toast('err', 'Не удалось загрузить изображения');
+      return null;
     } finally {
       setSaving(false);
     }
+  };
+
+  const uploadGallery = async (index: number, files: FileList | null) => {
+    if (!draft || !files) return;
+    const product = draft.kb.products[index];
+    if (product.gallery.length + files.length > 5) {
+      toast('err', 'Можно загрузить не более 5 изображений для одного продукта');
+      return;
+    }
+    const uploaded = await uploadFiles(files);
+    if (!uploaded) return;
+    const selectedImage = product.selected_image || uploaded[0] || '';
+    putProduct(index, { gallery: [...product.gallery, ...uploaded], selected_image: selectedImage, logo_url: selectedImage });
+    toast('ok', 'Изображения загружены. Сохраните изменения');
+  };
+
+  const uploadLogo = async (files: FileList | null) => {
+    if (!draft || !files?.length) return;
+    const uploaded = await uploadFiles(files);
+    if (!uploaded?.[0]) return;
+    putKb({ logo_url: uploaded[0] });
+    toast('ok', 'Логотип бренда загружен. Сохраните изменения');
   };
 
   const requestErid = () => {
@@ -184,16 +218,21 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
 
   const active = draft.status === 'Активен';
   const letter = (draft.name || '').trim().charAt(0).toUpperCase() || '+';
+  const galleryProduct = galleryFor === null ? null : draft.kb.products[galleryFor] ?? null;
 
   return (
     <div className="h-full flex flex-col bg-page">
       <div className="bg-white border-b border-line px-6 pt-[18px] shrink-0">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="w-[52px] h-[52px] rounded-[14px] shrink-0 flex items-center justify-center text-[19px] font-extrabold text-white" style={{ background: `linear-gradient(135deg,hsl(${draft.hue} 70% 52%),hsl(${draft.hue + 25} 65% 38%))` }}>
-            {letter}
+          <span className="w-[52px] h-[52px] rounded-[14px] shrink-0 flex items-center justify-center overflow-hidden text-[19px] font-extrabold text-white" style={{ background: `linear-gradient(135deg,hsl(${draft.hue} 70% 52%),hsl(${draft.hue + 25} 65% 38%))` }}>
+            {draft.kb.logo_url ? <img src={draft.kb.logo_url} alt="Логотип бренда" className="w-full h-full object-cover" /> : letter}
           </span>
           <input value={draft.name} onChange={e => put({ name: e.target.value })} placeholder="Название бренда" aria-label="Название бренда"
             className="flex-1 min-w-[220px] border-0 border-b-2 border-transparent bg-transparent py-0.5 font-collab text-[22px] font-semibold text-ink outline-none focus:border-brand-300" />
+          <label className="inline-flex items-center gap-2 h-10 px-3.5 rounded-[10px] border border-brand-200 bg-white text-brand-600 text-[13.5px] font-semibold cursor-pointer hover:bg-brand-50 transition-colors">
+            <Upload size={15} />{draft.kb.logo_url ? 'Заменить логотип' : 'Логотип бренда'}
+            <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => { void uploadLogo(e.target.files); e.target.value = ''; }} />
+          </label>
           <button type="button" onClick={() => { put({ hue: (draft.hue + 70) % 360 }); toast('info', 'Цвет бренда обновлён'); }}
             className="inline-flex items-center gap-2 h-10 px-3.5 rounded-[10px] border border-line bg-white text-gray-700 text-[13.5px] font-semibold hover:border-gray-300 transition-colors">
             <Upload size={15} />Цвет бренда
@@ -248,37 +287,9 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
 
           {tab === 'product' && (
             <>
-              <section className="bg-white border border-line rounded-2xl p-[22px] flex flex-col gap-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <label className="flex flex-col gap-2 text-[13px] font-semibold text-gray-600">Ссылка на продукт
-                    <input type="url" maxLength={2048} value={draft.kb.product_url} onChange={e => putKb({ product_url: e.target.value })} className={inputCls} />
-                  </label>
-                  <label className="flex flex-col gap-2 text-[13px] font-semibold text-gray-600">Артикул
-                    <input maxLength={255} value={draft.kb.sku} onChange={e => putKb({ sku: e.target.value })} className={inputCls} />
-                  </label>
-                </div>
-                <div className="flex flex-col gap-3">
-                  <div className="text-[13px] font-semibold text-gray-600">Студийные фотографии и рекламные материалы</div>
-                  <div className="flex flex-wrap gap-3">
-                    {draft.kb.gallery.map((url, index) => (
-                      <div key={url} className="relative w-24 h-24">
-                        <img src={url} alt={`Материал ${index + 1}`} className="w-24 h-24 rounded-xl object-cover border border-line" />
-                        <button type="button" aria-label="Удалить изображение" onClick={() => putKb({ gallery: draft.kb.gallery.filter((_, i) => i !== index) })} className="absolute -right-2 -top-2 w-6 h-6 rounded-full bg-white border border-line text-gray-500 flex items-center justify-center"><X size={12} /></button>
-                      </div>
-                    ))}
-                  </div>
-                  {draft.kb.gallery.length < 5 && (
-                    <label className="self-start inline-flex items-center gap-2 h-10 px-3.5 rounded-[10px] border border-brand-200 text-brand-600 text-[13px] font-bold cursor-pointer">
-                      <Upload size={15} />Загрузить изображения
-                      <input type="file" multiple accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => { void uploadGallery(e.target.files); e.target.value = ''; }} />
-                    </label>
-                  )}
-                  {draft.kb.gallery.length === 0 && <div className="text-[13px] text-muted">Загрузите до 5 изображений</div>}
-                </div>
-              </section>
               <div className="flex items-center justify-between gap-3">
                 <h3 className="m-0 text-[15px] font-bold text-ink">Карточки продуктов</h3>
-                <button type="button" onClick={() => { putKb({ products: [...draft.kb.products, { name: 'Новый продукт', desc: '', tags: [], hue: (draft.hue + 40 * (draft.kb.products.length + 1)) % 360 }] }); }}
+                <button type="button" onClick={() => { putKb({ products: [...draft.kb.products, { name: 'Новый продукт', desc: '', tags: [], hue: (draft.hue + 40 * (draft.kb.products.length + 1)) % 360, product_url: '', sku: '', logo_url: '', gallery: [], selected_image: '' }] }); }}
                   className="inline-flex items-center gap-1.5 h-[38px] px-3.5 rounded-[10px] border border-brand-200 bg-white text-brand-600 text-[13.5px] font-bold hover:bg-brand-50 transition-colors">
                   <Plus size={14} />Добавить продукт
                 </button>
@@ -288,7 +299,14 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
               )}
               {draft.kb.products.map((p, i) => (
                 <article key={i} className="bg-white border border-line rounded-2xl p-4 flex gap-4">
-                  <span aria-hidden="true" className="w-[92px] h-[92px] shrink-0 rounded-[14px] shadow-md" style={{ background: `radial-gradient(circle at 30% 25%,hsl(${p.hue} 80% 92%),hsl(${p.hue + 20} 60% 62%) 60%,hsl(${p.hue + 30} 55% 45%))` }} />
+                  <div className="w-[92px] shrink-0 flex flex-col gap-2">
+                    <span className="w-[92px] h-[92px] rounded-[14px] shadow-md overflow-hidden flex items-center justify-center" style={{ background: `radial-gradient(circle at 30% 25%,hsl(${p.hue} 80% 92%),hsl(${p.hue + 20} 60% 62%) 60%,hsl(${p.hue + 30} 55% 45%))` }}>
+                      {(p.selected_image || p.logo_url) && <img src={p.selected_image || p.logo_url} alt={`Изображение продукта ${p.name}`} className="w-full h-full object-cover" />}
+                    </span>
+                    <button type="button" onClick={() => setGalleryFor(i)} className="inline-flex items-center justify-center gap-1 min-h-8 px-1 rounded-lg border border-brand-200 text-brand-600 text-[11px] font-bold text-center hover:bg-brand-50">
+                      <Upload size={12} />{p.selected_image || p.logo_url ? 'Сменить логотип' : 'Логотип'}
+                    </button>
+                  </div>
                   <div className="flex-1 min-w-0 flex flex-col gap-2">
                     <div className="flex items-center gap-2">
                       <input value={p.name} aria-label="Название продукта" onChange={e => putKb({ products: draft.kb.products.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })}
@@ -300,6 +318,15 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
                     </div>
                     <textarea rows={2} value={p.desc} aria-label="Описание продукта" onChange={e => putKb({ products: draft.kb.products.map((x, j) => j === i ? { ...x, desc: e.target.value } : x) })}
                       placeholder="Коротко о продукте" className="w-full px-3 py-2.5 rounded-[10px] border border-line text-[14px] leading-normal text-ink outline-none resize-vertical focus:border-brand-300 focus:ring-[3px] focus:ring-brand-100" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                      <label className="flex flex-col gap-1.5 text-[12.5px] font-semibold text-gray-600">Ссылка на продукт
+                        <input type="url" maxLength={2048} value={p.product_url} onChange={e => putProduct(i, { product_url: e.target.value })} className={inputCls} />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[12.5px] font-semibold text-gray-600">Артикул
+                        <input maxLength={255} value={p.sku} onChange={e => putProduct(i, { sku: e.target.value })} className={inputCls} />
+                      </label>
+                    </div>
+
                     <div className="flex flex-wrap items-center gap-1.5">
                       {p.tags.map((t, k) => (
                         <span key={k} className="inline-flex items-center gap-1 h-[30px] pl-2.5 pr-1 rounded-lg border border-brand-200 bg-brand-50 text-brand-700 text-[13px] font-semibold">
@@ -416,6 +443,55 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
 
         </div>
       </div>
+      {galleryFor !== null && galleryProduct && (
+        <div role="dialog" aria-modal="true" aria-label={`Логотип продукта ${galleryProduct.name}`} className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setGalleryFor(null); }} onKeyDown={e => { if (e.key === 'Escape') setGalleryFor(null); }}>
+          <div className="w-full max-w-[680px] max-h-full overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="m-0 text-[18px] font-bold text-ink">Логотип продукта · {galleryProduct.gallery.length}/5</h3>
+                <p className="m-0 mt-1 text-[13px] text-muted">Загрузите до 5 изображений и выберите логотип карточки</p>
+              </div>
+              <button type="button" autoFocus aria-label="Закрыть галерею" onClick={() => setGalleryFor(null)} className="w-9 h-9 rounded-lg text-gray-500 flex items-center justify-center hover:bg-gray-100"><X size={18} /></button>
+            </div>
+            <div className="relative w-full aspect-[16/8] min-h-[180px] rounded-xl overflow-hidden bg-page flex items-center justify-center">
+              {galleryProduct.selected_image || galleryProduct.logo_url ? (
+                <>
+                  <img src={galleryProduct.selected_image || galleryProduct.logo_url} alt={`Логотип продукта ${galleryProduct.name}`} className="w-full h-full object-contain" />
+                  <button type="button" aria-label="Увеличить изображение" onClick={() => setPreviewImage(galleryProduct.selected_image || galleryProduct.logo_url)} className="absolute right-3 bottom-3 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-white/95 border border-line text-gray-700 text-[12px] font-bold shadow-sm"><Maximize2 size={14} />Увеличить</button>
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-2 text-muted"><Image size={30} /><span className="text-[13px]">Загрузите первое изображение</span></div>
+              )}
+            </div>
+            <div className="grid grid-cols-5 gap-2.5">
+              {galleryProduct.gallery.map((url, imageIndex) => (
+                <div key={url} className={'relative rounded-lg border-2 ' + ((galleryProduct.selected_image || galleryProduct.logo_url) === url ? 'border-brand-500' : 'border-transparent')}>
+                  <button type="button" aria-label={`Выбрать логотип ${imageIndex + 1}`} aria-pressed={(galleryProduct.selected_image || galleryProduct.logo_url) === url} onClick={() => putProduct(galleryFor, { selected_image: url, logo_url: url })} className="w-full aspect-square rounded-md overflow-hidden bg-page">
+                    <img src={url} alt={`Вариант логотипа ${imageIndex + 1}`} className="w-full h-full object-cover" />
+                  </button>
+                  <button type="button" aria-label={`Удалить изображение ${imageIndex + 1}`} onClick={() => { const gallery = galleryProduct.gallery.filter((_, index) => index !== imageIndex); const selectedImage = (galleryProduct.selected_image || galleryProduct.logo_url) === url ? gallery[0] ?? '' : galleryProduct.selected_image; putProduct(galleryFor, { gallery, selected_image: selectedImage, logo_url: selectedImage }); }} className="absolute -right-1.5 -top-1.5 w-6 h-6 rounded-full bg-white border border-line text-gray-500 flex items-center justify-center shadow-sm"><X size={11} /></button>
+                </div>
+              ))}
+              {galleryProduct.gallery.length < 5 && (
+                <label className="aspect-square rounded-lg border-[1.5px] border-dashed border-brand-200 text-brand-600 flex flex-col items-center justify-center gap-1 text-[11px] font-bold cursor-pointer hover:bg-brand-50">
+                  <Upload size={17} />Загрузить
+                  <input type="file" multiple accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => { void uploadGallery(galleryFor, e.target.files); e.target.value = ''; }} />
+                </label>
+              )}
+              {Array.from({ length: Math.max(0, 4 - galleryProduct.gallery.length) }, (_, placeholderIndex) => (
+                <div key={`empty-${placeholderIndex}`} className="aspect-square rounded-lg border border-dashed border-line bg-page flex items-center justify-center text-gray-300"><Image size={16} /></div>
+              ))}
+            </div>
+            <div className="text-[12px] text-muted">Выбранное изображение отображается на карточке продукта. Нажмите «Сохранить» в редакторе бренда, чтобы сохранить изменения.</div>
+          </div>
+        </div>
+      )}
+      {previewImage && (
+        <div role="dialog" aria-modal="true" aria-label="Увеличенное изображение продукта" className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-5" onClick={e => { if (e.target === e.currentTarget) setPreviewImage(null); }} onKeyDown={e => { if (e.key === 'Escape') setPreviewImage(null); }}>
+          <button type="button" autoFocus aria-label="Закрыть увеличенное изображение" onClick={() => setPreviewImage(null)} className="absolute top-5 right-5 w-10 h-10 rounded-full bg-white text-gray-700 flex items-center justify-center shadow-lg"><X size={20} /></button>
+          <img src={previewImage} alt="Увеличенное изображение продукта" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+        </div>
+      )}
     </div>
   );
 }

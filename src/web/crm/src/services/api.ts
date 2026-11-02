@@ -216,6 +216,11 @@ export interface BrandProduct {
   desc: string;
   tags: string[];
   hue: number;
+  product_url: string;
+  sku: string;
+  logo_url: string;
+  gallery: string[];
+  selected_image: string;
 }
 
 export interface BrandPayType {
@@ -250,6 +255,7 @@ export interface BrandKb {
   mentions: string[];
   pay_types: BrandPayType[];
   requisites: BrandRequisites;
+  logo_url: string;
   product_url: string;
   sku: string;
   gallery: string[];

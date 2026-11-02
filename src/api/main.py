@@ -37,7 +37,8 @@ CSS_FILE = WEB_DIR / "css" / "style.css"
 JS_FILE = WEB_DIR / "js" / "app.js"
 LANDING_DIR = Path(__file__).resolve().parent.parent / "web" / "landing" / "dist"
 LANDING_INDEX_FILE = LANDING_DIR / "index.html"
-LANDING_NEW_INDEX_FILE = LANDING_DIR / "new-landing" / "index.html"
+LANDING_STATIC_INDEX_FILE = LANDING_DIR / "static" / "index.html"
+LANDING_STATIC_EN_FILE = LANDING_DIR / "static" / "en.html"
 LANDING_EN_FILE = LANDING_DIR / "en.html"
 CSS_ASSET = "/css/style.css"
 JS_ASSET = "/js/app.js"
@@ -181,10 +182,10 @@ class SecurityHeadersMiddleware:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
                 for header, value in SECURITY_HEADERS.items():
-                    if scope.get("path") == "/" and header == "X-Frame-Options":
+                    if scope.get("path") in {"/", "/landing", "/landing/"} and header == "X-Frame-Options":
                         continue
                     headers[header] = value
-                if scope.get("path") == "/":
+                if scope.get("path") in {"/", "/landing", "/landing/"}:
                     headers["Content-Security-Policy"] = "frame-ancestors 'self' https://crm.collabrama.ru"
             await send(message)
 
@@ -237,15 +238,18 @@ def _render_search_index(settings) -> HTMLResponse:
 
 def _render_landing(settings, page: str = "index") -> HTMLResponse | None:
     if page == "en":
-        landing_file = LANDING_EN_FILE
+        landing_file = LANDING_STATIC_EN_FILE
     elif page == "app":
         landing_file = LANDING_INDEX_FILE
     else:
-        landing_file = LANDING_NEW_INDEX_FILE
+        landing_file = LANDING_STATIC_INDEX_FILE
     if not landing_file.exists():
         return None
     html = landing_file.read_text(encoding="utf-8")
-    html = html.replace('"__CRM_URL__"', f'"{settings.crm_frontend_url}"')
+    if page == "app":
+        html = html.replace('"__CRM_URL__"', f'"{settings.crm_frontend_url}"')
+    else:
+        html = html.replace('__CRM_URL__', settings.crm_frontend_url)
     return HTMLResponse(content=html, headers=NO_CACHE_HEADERS)
 
 
@@ -312,12 +316,12 @@ if LANDING_ASSETS_DIR.exists():
         name="landing-assets",
     )
 
-NEW_LANDING_DIR = LANDING_DIR / "new-landing"
-if NEW_LANDING_DIR.exists():
+STATIC_LANDING_DIR = LANDING_DIR / "static"
+if STATIC_LANDING_DIR.exists():
     app.mount(
-        "/new-landing",
-        StaticFiles(directory=str(NEW_LANDING_DIR), html=True),
-        name="new-landing-assets",
+        "/static",
+        StaticFiles(directory=str(STATIC_LANDING_DIR), html=True),
+        name="static-landing-assets",
     )
 
 LEGAL_DIR = Path(__file__).resolve().parent.parent / "web" / "legal"

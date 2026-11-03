@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -22,8 +23,9 @@ from src.api.services.crm_helpers import (
     resolve_account,
     resolve_target_for_channel,
 )
+from src.api.services.dialog_quota import ensure_dialog_can_be_created
 from src.db.database import Database
-from src.db.models import Account, CreatorMessage, Deal, EridRecord, User
+from src.db.models import Account, CreatorMessage, Deal, EridRecord, User, UserShortlist
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,7 @@ def _deal_item(
         user_id=deal.user_id,
         account_id=str(deal.account_id),
         title=deal.title,
+        parent_deal_id=deal.parent_deal_id,
         stage=deal.stage,
         budget=deal.budget,
         type=deal.type,
@@ -204,13 +207,15 @@ async def create_deal(
         await session.flush()
         if payload.initial_message:
             resolution = ContactResolver.resolve(account.raw_metadata, account.username)
+            channel_type = resolution.channel_type or (account.platform.lower() if account.platform else "instagram")
+            await ensure_dialog_can_be_created(session, current_user.id, account.id, channel_type)
             msg = CreatorMessage(
                 user_id=current_user.id,
                 account_id=account.id,
                 deal_id=deal.id,
                 sender_type="user",
                 text=payload.initial_message.strip(),
-                channel_type=resolution.channel_type,
+                channel_type=channel_type,
                 channel_target=resolution.channel_target,
                 external_message_id=None,
             )
@@ -229,6 +234,38 @@ async def create_deal(
     except Exception:
         logger.warning("Failed to update creator status in Twenty CRM", exc_info=True)
     return item
+
+
+@router.post("/{deal_id}/repeat", response_model=DealItem)
+async def repeat_deal(
+    deal_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> DealItem:
+    async with db.async_session() as session:
+        source = await session.scalar(
+            select(Deal).where(Deal.id == deal_id, Deal.user_id == current_user.id)
+        )
+        if source is None:
+            raise HTTPException(status_code=404, detail="Сделка не найдена")
+        if source.stage != 6:
+            raise HTTPException(status_code=409, detail="Повторную сделку можно создать после завершения текущей")
+        repeated = Deal(
+            user_id=current_user.id,
+            account_id=source.account_id,
+            parent_deal_id=source.id,
+            title=source.title,
+            stage=3,
+            budget=0,
+            type=source.type,
+            brand_name=source.brand_name,
+            pub_date=None,
+            terms=None,
+        )
+        session.add(repeated)
+        await session.commit()
+        await session.refresh(repeated)
+        return _deal_item(repeated, account=source.account)
 
 
 @router.get("/{deal_id}", response_model=DealItem)
@@ -328,7 +365,28 @@ async def delete_deal(
         deal = result.scalar_one_or_none()
         if deal is None:
             raise HTTPException(status_code=404, detail="Сделка не найдена")
+        account_id = deal.account_id
         await session.delete(deal)
+        await session.flush()
+        remaining_deals = await session.scalar(
+            select(func.count(Deal.id)).where(
+                Deal.user_id == current_user.id,
+                Deal.account_id == account_id,
+            )
+        )
+        if not remaining_deals:
+            now = datetime.now(timezone.utc)
+            await session.execute(
+                pg_insert(UserShortlist)
+                .values(
+                    user_id=current_user.id,
+                    account_id=account_id,
+                    status="Свободен",
+                    created_at=now,
+                    updated_at=now,
+                )
+                .on_conflict_do_nothing(index_elements=["user_id", "account_id"])
+            )
         await session.commit()
     return {"status": "deleted", "deal_id": deal_id}
 
@@ -391,8 +449,9 @@ async def send_deal_message(
             target_channel = payload.preferred_channel
             target_handle = resolve_target_for_channel(account, target_channel) or resolution.channel_target
         else:
-            target_channel = resolution.channel_type
+            target_channel = resolution.channel_type or (account.platform.lower() if account.platform else "instagram")
             target_handle = resolution.channel_target
+        await ensure_dialog_can_be_created(session, current_user.id, account.id, target_channel)
         message = CreatorMessage(
             user_id=deal.user_id,
             account_id=deal.account_id,

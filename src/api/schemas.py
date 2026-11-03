@@ -595,6 +595,7 @@ class DealItem(BaseModel):
     user_id: int
     account_id: str
     title: str
+    parent_deal_id: int | None = None
     stage: int
     budget: int
     type: str

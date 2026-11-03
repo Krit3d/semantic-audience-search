@@ -42,75 +42,6 @@ function getCrmLoginUrl() {
   return `${getCrmBaseUrl()}/#/login`;
 }
 
-function getCrmAuthParams() {
-  const token = localStorage.getItem("creatorflow_token");
-  if (!token) return "";
-  const params = new URLSearchParams({ session_token: token });
-  try {
-    const user = JSON.parse(localStorage.getItem("creatorflow_user") || "{}");
-    if (user && user.id != null && String(user.id) !== "") params.set("user_id", String(user.id));
-    if (user && user.email) params.set("user_email", String(user.email));
-  } catch {
-  }
-  return params.toString();
-}
-
-function getCrmEntryUrl() {
-  const authParams = getCrmAuthParams();
-  return `${getCrmBaseUrl()}/${authParams ? `?${authParams}` : ""}`;
-}
-
-function getCrmPricingUrl() {
-  return `${getCrmBaseUrl()}/#/pricing`;
-}
-
-const SUBSCRIPTION_PLAN_TITLES = { trial: "Триал", basic: "Базовый", pro: "Pro", enterprise: "Enterprise" };
-let subscriptionCache = { at: 0, value: null };
-
-async function fetchActiveSubscription() {
-  const token = localStorage.getItem("creatorflow_token");
-  if (!token) return null;
-  if (Date.now() - subscriptionCache.at < 5 * 60 * 1000) return subscriptionCache.value;
-  try {
-    const res = await fetch("/api/v1/billing/subscription", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("bad status");
-    const sub = await res.json();
-    const value = sub && sub.is_active ? sub : null;
-    subscriptionCache = { at: Date.now(), value };
-    return value;
-  } catch {
-    subscriptionCache = { at: Date.now(), value: null };
-    return null;
-  }
-}
-
-function fillSubscriptionBadge(rootEl) {
-  const slot = rootEl.querySelector("[data-subscription-badge]");
-  if (!slot) return;
-  fetchActiveSubscription().then((sub) => {
-    const target = rootEl.querySelector("[data-subscription-badge]");
-    if (!target) return;
-    if (!sub) {
-      target.remove();
-      return;
-    }
-    const planName = sub.plan ? (SUBSCRIPTION_PLAN_TITLES[sub.plan.name] || sub.plan.name) : "Активна";
-    let expiresLabel = "";
-    if (sub.expires_at) {
-      const d = new Date(sub.expires_at);
-      if (!Number.isNaN(d.getTime())) expiresLabel = d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-    }
-    const badge = document.createElement("a");
-    badge.className = "subscription-badge";
-    badge.href = getCrmPricingUrl();
-    badge.title = "Подписка активна — открыть тарифы и условия";
-    badge.innerHTML = `<span class="subscription-badge-dot"></span>${escapeText(planName)}${expiresLabel ? ` · до ${escapeText(expiresLabel)}` : ""}`;
-    target.replaceWith(badge);
-  });
-}
-
 function consumeSimilarParam() {
   const params = new URLSearchParams(window.location.search);
   const raw = params.get("similar");
@@ -343,44 +274,8 @@ function buildHeader() {
       <button class="brand-btn" data-action="go-search">
         <span class="brand-name">Collabrama</span>
       </button>
-      <div class="header-actions">
-        <span data-subscription-badge></span>
-        <a class="header-icon-btn" href="/landing" title="О Collabrama — лендинг" aria-label="Перейти на лендинг">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c2.5 3 2.5 15 0 18M12 3c-2.5 3-2.5 15 0 18"></path></svg>
-        </a>
-        <button class="header-crm-link" data-action="go-search" title="Поиск авторов — вы здесь" aria-label="Поиск авторов">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
-        </button>
-        <a class="header-icon-btn" href="${escapeText(getCrmEntryUrl())}" target="_parent" title="Перейти в Collabrama CRM" aria-label="Перейти в Collabrama CRM">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
-        </a>
-      </div>
     </div>`;
   return header;
-}
-
-function renderDock() {
-  let dock = app.querySelector("[data-dock]");
-  const count = store.shortlist.length;
-  if (count === 0) {
-    if (dock) dock.remove();
-    return;
-  }
-  if (!dock) {
-    dock = document.createElement("div");
-    dock.className = "short-dock";
-    dock.setAttribute("data-dock", "");
-    app.appendChild(dock);
-  }
-  dock.innerHTML = `
-    <button type="button" class="short-dock-btn" data-action="export-shortlist" title="Перейти в шорт-лист в Collabrama CRM">
-      <span class="short-dock-icon">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="#6366f1" stroke="#6366f1" stroke-width="1.6" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
-      </span>
-      <span class="short-dock-label">Шорт-лист</span>
-      <span class="short-dock-count">${count}</span>
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"></path></svg>
-    </button>`;
 }
 
 function buildFilterBar() {
@@ -634,10 +529,8 @@ function render() {
   const header = app.querySelector(".header");
   if (header) header.remove();
   app.prepend(buildHeader());
-  fillSubscriptionBadge(app);
 
   main.innerHTML = "";
-  renderDock();
 
   const tab = buildSearchTab();
   main.appendChild(tab);
@@ -1013,20 +906,20 @@ function findAuthor(id) {
   ) || null;
 }
 
-async function exportToCrm(accountIds) {
-  const ids = Array.isArray(accountIds) ? accountIds.map((id) => String(id)).filter(Boolean) : [];
-  if (ids.length === 0) {
-    showToast("Нет авторов для экспорта", "error");
-    return;
+async function addAuthorToCrm(author) {
+  const accountId = author.account_id ?? author.id ?? author.username ?? author.handle ?? author.platform_id;
+  if (!accountId) throw new Error("Не удалось определить автора");
+  let userEmail = "";
+  try {
+    const user = JSON.parse(localStorage.getItem("creatorflow_user") || "{}");
+    userEmail = user.email || "";
+  } catch {
   }
-  const authParams = getCrmAuthParams();
-  const targetUrl = `${getCrmBaseUrl()}/${authParams ? `?${authParams}` : ""}#/authors?import_ids=${ids.join(",")}`;
+  await api.exportToCrmShortlist([String(accountId)], userEmail);
   if (window.parent !== window) {
-    window.parent.location.href = targetUrl;
-  } else {
-    window.location.href = targetUrl;
+    const targetOrigin = new URL(getCrmBaseUrl(), window.location.origin).origin;
+    window.parent.postMessage({ type: "collabrama:shortlist-changed" }, targetOrigin);
   }
-  showToast("Авторы экспортированы в CRM");
 }
 
 async function analyzeBrandAction() {
@@ -1105,14 +998,20 @@ app.addEventListener("click", (e) => {
     if (label) {
       label.textContent = adding ? "В шортлисте" : "В шортлист";
     }
-    renderDock();
-    showToast(adding ? "Добавлено в шортлист" : "Убрано из шортлиста");
-  } else if (action === "export-shortlist") {
-    const ids = store.shortlist
-      .map((a) => (a.username || a.handle || a.account_id || a.id || a.platform_id))
-      .filter((id) => id != null && String(id).trim() !== "")
-      .map((id) => String(id).trim().replace(/^@/, ""));
-    exportToCrm(Array.from(new Set(ids)));
+    if (adding) {
+      target.disabled = true;
+      addAuthorToCrm(author)
+        .then(() => showToast("Добавлено в шортлист CRM"))
+        .catch((err) => {
+          store.toggleShortlist(author);
+          target.classList.remove("in");
+          if (label) label.textContent = "В шортлист";
+          showToast(err.message || "Не удалось добавить автора в CRM", "error");
+        })
+        .finally(() => { target.disabled = false; });
+    } else {
+      showToast("Убрано из шортлиста");
+    }
   } else if (action === "toggle-explanation") {
     const card = target.closest(".author-card");
     if (!card) return;

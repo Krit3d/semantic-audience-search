@@ -1,4 +1,4 @@
-import { getCrmUrl, isAuthenticated } from "./auth.js";
+import { getCrmUrl } from "./auth.js";
 
 export function getCrmPricingUrl() {
   return `${getCrmUrl()}/#/pricing`;
@@ -28,7 +28,6 @@ function fmtDate(iso) {
  * Возвращает { title, expiresLabel } или null (аноним, нет токена, подписка не активна).
  */
 export async function fetchActiveSubscription() {
-  if (!isAuthenticated()) return null;
   const token = window.localStorage.getItem("creatorflow_token");
   if (!token) return null;
   try {

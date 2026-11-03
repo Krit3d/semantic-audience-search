@@ -1,11 +1,10 @@
-import type { ReactNode } from 'react';
-import { KanbanSquare, MessageCircle, BarChart3, LifeBuoy, LogOut, Search, ChevronRight, CreditCard, Cookie } from 'lucide-react';
-import { userName } from '../services/api';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { KanbanSquare, MessageCircle, BarChart3, LifeBuoy, Loader2, LogOut, Search, ChevronRight, CreditCard, Cookie } from 'lucide-react';
+import { api, userName, type SubscriptionStatusInfo } from '../services/api';
+import { planTitle } from '../screens/pricing/planMeta';
 import TrialReminderBanner from '../components/TrialReminderBanner';
 
 export type NavId = 'search' | 'deals' | 'comms' | 'analytics' | 'base' | 'settings' | 'tickets' | 'pricing' | 'support';
-
-const SEARCH_HOME = ((import.meta.env.VITE_SEARCH_URL as string | undefined) || 'https://collabrama.ru').replace(/\/+$/, '');
 
 const NAV: { id: NavId; label: string; icon: ReactNode }[] = [
   { id: 'search', label: 'Поиск авторов', icon: <Search size={20} strokeWidth={1.8} /> },
@@ -13,6 +12,36 @@ const NAV: { id: NavId; label: string; icon: ReactNode }[] = [
   { id: 'comms', label: 'Коммуникации', icon: <MessageCircle size={20} strokeWidth={1.8} /> },
   { id: 'analytics', label: 'Аналитика', icon: <BarChart3 size={20} strokeWidth={1.8} /> },
 ];
+
+function SubscriptionNavButton({ active, onNavigate }: { active: boolean; onNavigate: (id: NavId) => void }) {
+  const [subscription, setSubscription] = useState<SubscriptionStatusInfo | null>(null);
+  const [status, setStatus] = useState<'loading' | 'error' | 'ready'>('loading');
+  const load = useCallback(() => {
+    setStatus('loading');
+    api.getSubscription()
+      .then(item => { setSubscription(item); setStatus('ready'); })
+      .catch(() => setStatus('error'));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (status === 'loading') {
+    return <span className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-muted"><Loader2 size={15} className="animate-spin" />Загружаем подписку…</span>;
+  }
+  if (status === 'error') {
+    return <button type="button" onClick={load} className="h-9 px-3 rounded-lg border border-red-200 bg-red-50 text-red-600 text-[12.5px] font-semibold">Ошибка подписки · Повторить</button>;
+  }
+
+  const title = subscription?.is_active
+    ? subscription.status === 'trial' ? 'Триал' : subscription.plan ? planTitle(subscription.plan.name) : 'Активна'
+    : 'Подписка не активна';
+  return (
+    <button type="button" onClick={() => onNavigate('pricing')} aria-current={active ? 'page' : undefined} title="Тарифы и подписка"
+      className="inline-flex items-center h-9 px-1 text-[12.5px] font-medium text-muted hover:text-ink transition-colors">
+      {title}
+    </button>
+  );
+}
 
 export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDeal, children }: {
   active: NavId;
@@ -29,7 +58,7 @@ export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDe
   return (
     <div className="h-screen flex bg-page text-ink overflow-hidden">
       <aside className="w-[240px] shrink-0 bg-white border-r border-line flex flex-col">
-        <a href={`${SEARCH_HOME}/landing`} className="px-5 pt-5 pb-4 flex items-center gap-2.5" aria-label="Перейти на лендинг Collabrama">
+        <button type="button" onClick={() => onNavigate('deals')} className="px-5 pt-5 pb-4 flex items-center gap-2.5 text-left" aria-label="Перейти в шорт-лист и сделки">
           <svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="#6366f1" stroke="#6366f1" strokeWidth="1.6" strokeLinejoin="round">
             <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
@@ -37,7 +66,7 @@ export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDe
             <div className="text-[15px] font-bold font-display text-ink leading-none whitespace-nowrap">Collabrama CRM</div>
             <div className="text-[10px] font-medium text-muted mt-1 leading-tight">CRM для работы с авторами</div>
           </div>
-        </a>
+        </button>
 
         <nav aria-label="Разделы" className="px-3 pt-1 pb-3 flex flex-col gap-1">
           {NAV.map(m => {
@@ -105,6 +134,9 @@ export function AppLayout({ active, user, isAdmin, onNavigate, onLogout, onNewDe
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
+        <div className="h-12 shrink-0 px-5 bg-white border-b border-line flex items-center justify-end">
+          <SubscriptionNavButton active={active === 'pricing'} onNavigate={onNavigate} />
+        </div>
         <TrialReminderBanner onOpenPricing={() => onNavigate('pricing')} />
         <main className="flex-1 min-h-0 relative">{children}</main>
       </div>

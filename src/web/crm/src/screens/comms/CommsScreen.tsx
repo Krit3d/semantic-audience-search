@@ -93,7 +93,7 @@ function VideoPlayer({ src }: { src: string }) {
   );
 }
 
-export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, onNewDeal }: { deals: Deal[]; onOpenDeal?: (id: string) => void; initialAuthorId?: string | null; onNewDeal?: (authorId: string, meta?: { name?: string; handle?: string }) => void }) {
+export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, initialDealId, onNewDeal }: { deals: Deal[]; onOpenDeal?: (id: string) => void; initialAuthorId?: string | null; initialDealId?: string | null; onNewDeal?: (authorId: string, meta?: { name?: string; handle?: string }) => void }) {
   const toast = useToast();
   const [channels, setChannels] = useState<CommunicationChannelItem[]>([]);
   const [channelsLoading, setChannelsLoading] = useState(true);
@@ -209,8 +209,9 @@ export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, onNewD
 
   const ch = filtered.find(c => String(c.author_id) === selectedAuthorId) ?? filtered[0] ?? null;
   const a = ch ? channelAuthor(ch) : null;
-  const targetDeal = ch ? deals.find(d => (d.authorId === String(ch.author_id) || d.id === String(ch.deal_id)) && d.stage >= 1 && d.stage <= 6) : undefined;
-  const activeDeals = ch ? deals.filter(d => (d.authorId === String(ch.author_id) || d.id === String(ch.deal_id)) && d.stage >= 1 && d.stage <= 6) : [];
+  const requestedDealId = ch && initialDealId && deals.some(d => d.id === String(initialDealId) && d.authorId === String(ch.author_id)) ? String(initialDealId) : ch?.deal_id;
+  const targetDeal = ch && requestedDealId ? deals.find(d => d.id === String(requestedDealId) && d.authorId === String(ch.author_id)) : undefined;
+  const activeDeals = ch ? deals.filter(d => d.authorId === String(ch.author_id) && d.stage >= 1 && d.stage <= 6) : [];
   const activeBudget = activeDeals.reduce((acc, d) => acc + d.budget, 0);
 
   const chatRef = useRef<HTMLDivElement>(null);
@@ -232,7 +233,7 @@ export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, onNewD
     setMessagesError(null);
 
     const fetchMessages = () => {
-      api.getCreatorMessages(authorId, activeChannelType)
+      (targetDeal ? api.getDealMessages(Number(targetDeal.id)) : api.getCreatorMessages(authorId, activeChannelType))
         .then(items => {
           if (!isMounted) return;
           setMessagesLoading(false);
@@ -271,7 +272,7 @@ export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, onNewD
       isMounted = false;
       clearInterval(timer);
     };
-  }, [ch?.author_id, activeChannelType]);
+  }, [ch?.author_id, activeChannelType, targetDeal?.id]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -293,7 +294,11 @@ export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, onNewD
     const file = attachedFile;
     setDraft('');
     setAttachedFile(null);
-    api.sendCreatorMessage(String(ch.author_id), text || null, 'user', file ? { media_url: file.media_url, media_name: file.media_name, media_type: file.media_type } : undefined, activeChannelType)
+    const media = file ? { media_url: file.media_url, media_name: file.media_name, media_type: file.media_type } : undefined;
+    const request = targetDeal
+      ? api.sendDealMessage(Number(targetDeal.id), text || null, 'user', media, activeChannelType)
+      : api.sendCreatorMessage(String(ch.author_id), text || null, 'user', media, activeChannelType);
+    request
       .then(m => {
         const dm = toDealMsg(m);
         setMsgs(prev => [...prev, dm]);
@@ -344,7 +349,7 @@ export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, onNewD
     if (!ch) return;
     setMessagesError(null);
     setMessagesLoading(true);
-    api.getCreatorMessages(String(ch.author_id), activeChannelType)
+    (targetDeal ? api.getDealMessages(Number(targetDeal.id)) : api.getCreatorMessages(String(ch.author_id), activeChannelType))
       .then(items => { setMsgs(items.map(toDealMsg)); setMessagesLoading(false); })
       .catch(() => { setMessagesLoading(false); setMessagesError('Не удалось загрузить сообщения'); });
   };
@@ -417,7 +422,7 @@ export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, onNewD
           <Avatar nick={a?.nick ?? ''} hue={a?.hue ?? 0} size={36} />
           <div className="min-w-0">
             <div className="flex items-center gap-2"><span className="text-[14px] font-bold text-ink truncate">{a?.nick ?? ''}</span>{a && <SocialIcon social={a.social} size={13} />}</div>
-            {Boolean(ch?.deal_title) && <div className="text-[11.5px] font-semibold text-muted truncate">Сделка: {ch?.deal_title}</div>}
+            {Boolean(targetDeal?.title ?? ch?.deal_title) && <div className="text-[11.5px] font-semibold text-muted truncate">Сделка: {targetDeal?.title ?? ch?.deal_title}</div>}
             <div className="flex items-center gap-1.5 mt-0.5">
               {ch && <div ref={channelMenuRef} className="relative">
                 <button type="button" aria-expanded={channelMenuOpen} onClick={() => setChannelMenuOpen(open => !open)}

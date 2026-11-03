@@ -135,6 +135,7 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
   const [brandEditorId, setBrandEditorId] = useState<number | null>(brandIdFromHash);
   const [profileId, setProfileId] = useState<string>('a1');
   const [commsAuthorId, setCommsAuthorId] = useState<string | null>(null);
+  const [commsDealId, setCommsDealId] = useState<string | null>(null);
 
   const handleNavigate = (id: NavId) => {
     const target = HASH_BY_NAV[id];
@@ -171,6 +172,19 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
   }, []);
 
   useEffect(() => {
+    const searchUrl = (import.meta.env.VITE_SEARCH_URL as string | undefined) || 'https://collabrama.ru';
+    const searchOrigin = new URL(searchUrl, window.location.origin).origin;
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== searchOrigin) return;
+      const data = event.data as { type?: unknown } | null;
+      if (data?.type !== 'collabrama:shortlist-changed') return;
+      window.dispatchEvent(new CustomEvent('creatorflow:shortlist_changed'));
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
+  useEffect(() => {
     const id = dealIdFromHash();
     if (id && deals.some(d => d.id === id)) setDealId(id);
   }, [deals]);
@@ -181,8 +195,9 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
     const path = window.location.hash.split('?')[0] || '#/deals';
     window.location.hash = `${path}?dealId=${id}`;
   };
-  const handleAuthorChat = (authorId: string) => {
+  const handleAuthorChat = (authorId: string, dealId?: string) => {
     setCommsAuthorId(authorId);
+    setCommsDealId(dealId ?? null);
     setScreen('comms');
     window.location.hash = '#/comms';
   };
@@ -203,10 +218,10 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
     <AppLayout active={NAV_BY_SCREEN[screen]} user={user} isAdmin={isAdmin} onNavigate={handleNavigate}
       onLogout={onLogout} onNewDeal={() => setNewDeal({})}>
       {screen === 'search' && <SearchScreen />}
-      {(screen === 'kanban' || screen === 'deals') && <DealsScreen deals={deals} dealsStatus={dealsStatus} onRetryDeals={loadDeals} setDeals={setDeals} onOpenDeal={openDeal} onNewDeal={() => setNewDeal({})} onOpenComms={(authorId: string) => handleAuthorChat(String(authorId))} />}
+      {(screen === 'kanban' || screen === 'deals') && <DealsScreen deals={deals} dealsStatus={dealsStatus} onRetryDeals={loadDeals} setDeals={setDeals} onOpenDeal={openDeal} onNewDeal={() => setNewDeal({})} onOpenComms={(authorId: string, dealId?: string) => handleAuthorChat(String(authorId), dealId)} />}
       {screen === 'authors' && <Authors deals={deals} onOpenProfile={id => { setProfileId(id); setScreen('author'); }} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} onOpenComms={(authorId: string) => handleAuthorChat(String(authorId))} />}
       {screen === 'author' && <AuthorProfile authorId={profileId} deals={deals} onBack={() => setScreen('authors')} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} onOpenDeal={(id, tab) => openDeal(id, tab ?? 'comms')} onOpenComms={(id?: string) => handleAuthorChat(id ? String(id) : String(profileId))} />}
-      {screen === 'comms' && <CommsScreen deals={deals} initialAuthorId={commsAuthorId} onOpenDeal={openDeal} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} />}
+      {screen === 'comms' && <CommsScreen deals={deals} initialAuthorId={commsAuthorId} initialDealId={commsDealId} onOpenDeal={openDeal} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} />}
       {screen === 'settings' && <SettingsScreen user={user} onOpenBrand={openBrandEditor} />}
       {screen === 'brand' && brandEditorId !== null && <BrandEditorScreen brandId={brandEditorId} key={brandEditorId} onClose={() => { window.location.hash = '#/settings'; }} onOpenRegistry={() => { window.location.hash = '#/settings'; }} />}
       {screen === 'analytics' && <AnalyticsScreen />}
@@ -229,6 +244,13 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
           window.location.hash = path;
         }}
           onUpdate={patch => setDeals(prev => prev.map(d => d.id === deal.id ? { ...d, ...patch } : d))}
+          onRepeat={repeated => {
+            setDeals(prev => [repeated, ...prev]);
+            setDealTab('overview');
+            openDeal(repeated.id, 'overview');
+            toast('ok', 'Повторная сделка создана');
+          }}
+          onOpenDeal={openDeal}
           onOpenKB={openKB}
           onOpenAuthor={(authorId: string) => {
             setProfileId(authorId);
@@ -238,12 +260,13 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
           }}
           onOpenComms={(authorId: string) => {
             setDealId(null);
-            handleAuthorChat(String(authorId));
+            handleAuthorChat(String(authorId), deal.id);
           }}
           onGenerateContract={d => { setDealId(null); setWizardDeal(d); }}
           onDelete={deletedId => {
             setDeals(prev => prev.filter(d => d.id !== deletedId));
             setDealId(null);
+            window.dispatchEvent(new CustomEvent('creatorflow:shortlist_changed'));
             toast('ok', 'Сделка успешно удалена');
           }} />
       )}

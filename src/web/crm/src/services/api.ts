@@ -131,6 +131,7 @@ export interface DealItem {
   user_id: number;
   account_id: string;
   title: string;
+  parent_deal_id: number | null;
   stage: number;
   budget: number;
   type: string;
@@ -654,6 +655,10 @@ export const api = {
     return request<DealItem>(`/deals/${dealId}`);
   },
 
+  async repeatDeal(dealId: number): Promise<DealItem> {
+    return request<DealItem>(`/deals/${dealId}/repeat`, { method: 'POST' });
+  },
+
   async updateDeal(dealId: number, payload: DealUpdatePayload): Promise<DealItem> {
     return request<DealItem>(`/deals/${dealId}`, {
       method: 'PATCH',
@@ -671,10 +676,17 @@ export const api = {
     return request<DealMessageItem[]>(`/deals/${dealId}/messages`);
   },
 
-  async sendDealMessage(dealId: number, text: string, senderType: string = 'user'): Promise<DealMessageItem> {
+  async sendDealMessage(dealId: number, text?: string | null, senderType: string = 'user', media?: { media_url: string; media_name: string; media_type: string }, preferredChannel?: string): Promise<DealMessageItem> {
     return request<DealMessageItem>(`/deals/${dealId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ text, sender_type: senderType }),
+      body: JSON.stringify({
+        text: text?.trim() || null,
+        sender_type: senderType,
+        media_url: media?.media_url || null,
+        media_name: media?.media_name || null,
+        media_type: media?.media_type || null,
+        preferred_channel: preferredChannel || null,
+      }),
     });
   },
 
@@ -962,14 +974,15 @@ export function mapDealItemToDeal(item: DealItem): Deal {
     brandId: item.brand_name ? String(item.brand_name) : 'b1',
     authorId: String(item.account_id),
     authorSummary: item.author,
+    parentDealId: item.parent_deal_id ? String(item.parent_deal_id) : null,
     budget: item.budget,
     stage: item.stage,
     date: new Date(item.created_at).toLocaleDateString('ru-RU'),
-    pubDate: item.pub_date || new Date(item.created_at).toLocaleDateString('ru-RU'),
+    pubDate: item.pub_date || '',
     type: item.type as Deal['type'],
     msgs: item.last_message ? [{ id: String(item.last_message.id), from: item.last_message.sender_type === 'creator' ? 'author' : 'user', text: item.last_message.text || '', time: new Date(item.last_message.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) }] : [],
     desc: item.terms || '',
-    terms: item.terms || `Фиксированная оплата ${item.budget} ₽`,
+    terms: item.terms || '',
     exclusive: false,
     edits: 2,
     erid: item.erid ?? undefined,

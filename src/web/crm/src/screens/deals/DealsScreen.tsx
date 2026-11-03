@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, LayoutGrid, List, Plus, Send, MessageCircle, Pencil, X, KanbanSquare, Sparkles } from 'lucide-react';
 import { STAGES, SHORTLIST_STAGE, fmtMoney, fmtNum, type Deal } from '../../data';
-import { useToast } from '../../components/ui';
+import { Btn, Modal, useToast } from '../../components/ui';
 import { Select, Skeleton, Empty, ErrorState } from '../../components/kit';
 import { SocialIcon } from '../../components/icons';
 import { api, mapDealItemToDeal, normalizeSocial, type BrandItem, type ShortlistItem } from '../../services/api';
@@ -68,7 +68,7 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
   setDeals: (updater: (prev: Deal[]) => Deal[]) => void;
   onOpenDeal: (id: string, tab?: string) => void;
   onNewDeal: () => void;
-  onOpenComms: (authorId: string) => void;
+  onOpenComms: (authorId: string, dealId?: string) => void;
 }) {
   const toast = useToast();
   const [view, setView] = useState<'kanban' | 'list'>('kanban');
@@ -81,7 +81,11 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
   const [drag, setDrag] = useState<KanbanCard | null>(null);
   const [overCol, setOverCol] = useState<number | null>(null);
   const [undo, setUndo] = useState<{ text: string; run: () => void } | null>(null);
+  const [dealToDelete, setDealToDelete] = useState<Deal | null>(null);
+  const [deletingDeal, setDeletingDeal] = useState(false);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dragRef = useRef<KanbanCard | null>(null);
+  const pendingDrops = useRef(new Set<string>());
 
   const loadShortlist = () => {
     setShortError(false);
@@ -93,6 +97,9 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
   useEffect(() => {
     loadShortlist();
     api.getBrands().then(setBrands).catch(() => setBrands([]));
+    const onShortlistChanged = () => loadShortlist();
+    window.addEventListener('creatorflow:shortlist_changed', onShortlistChanged);
+    return () => window.removeEventListener('creatorflow:shortlist_changed', onShortlistChanged);
   }, []);
 
   useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
@@ -158,21 +165,24 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
   };
 
   const removeDeal = (deal: Deal) => {
-    const backup = deals;
-    setDeals(prev => prev.filter(d => d.id !== deal.id));
-    let cancelled = false;
-    const deleteTimer = setTimeout(() => {
-      if (cancelled) return;
-      api.deleteDeal(Number(deal.id)).catch(() => {
-        setDeals(() => backup);
-        toast('err', 'Не удалось удалить сделку');
-      });
-    }, 5500);
-    showUndo(`Сделка «${deal.title}» удалена`, () => {
-      cancelled = true;
-      clearTimeout(deleteTimer);
-      setDeals(() => backup);
-    });
+    if (!deletingDeal) setDealToDelete(deal);
+  };
+
+  const confirmRemoveDeal = async () => {
+    if (!dealToDelete || deletingDeal) return;
+    const deal = dealToDelete;
+    setDeletingDeal(true);
+    try {
+      await api.deleteDeal(Number(deal.id));
+      setDeals(prev => prev.filter(d => d.id !== deal.id));
+      await loadShortlist();
+      setDealToDelete(null);
+      toast('ok', `Сделка «${deal.title}» удалена`);
+    } catch {
+      toast('err', 'Не удалось удалить сделку');
+    } finally {
+      setDeletingDeal(false);
+    }
   };
 
   const moveDeal = (deal: Deal, stage: number) => {
@@ -185,6 +195,8 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
   };
 
   const shortToStage = (card: ShortCard, stage: number) => {
+    if (pendingDrops.current.has(card.key)) return;
+    pendingDrops.current.add(card.key);
     api.createDeal({
       account_id: card.accountId,
       title: `${card.nick} · интеграция`,
@@ -205,13 +217,24 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
         loadShortlist();
         toast('ok', `${card.nick} перенесён в сделки`);
       })
-      .catch(() => toast('err', 'Не удалось создать сделку'));
+      .catch(() => toast('err', 'Не удалось создать сделку'))
+      .finally(() => pendingDrops.current.delete(card.key));
+  };
+
+  const beginDrag = (card: KanbanCard) => {
+    dragRef.current = card;
+    setDrag(card);
+  };
+
+  const clearDrag = () => {
+    dragRef.current = null;
+    setDrag(null);
+    setOverCol(null);
   };
 
   const dropOn = (stageId: number) => {
-    const card = drag;
-    setDrag(null);
-    setOverCol(null);
+    const card = dragRef.current;
+    clearDrag();
     if (!card) return;
     if (card.kind === 'deal') moveDeal(card.deal, stageId);
     else if (stageId !== SHORTLIST_STAGE) shortToStage(card, stageId);
@@ -238,8 +261,8 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
     const hue = hashHue(card.accountId);
     return (
       <article key={card.key} draggable
-        onDragStart={e => { setDrag(card); e.dataTransfer.effectAllowed = 'move'; }}
-        onDragEnd={() => { setDrag(null); setOverCol(null); }}
+        onDragStart={e => { beginDrag(card); e.dataTransfer.effectAllowed = 'move'; }}
+        onDragEnd={clearDrag}
         title="Перетащите на другой этап"
         className={`relative bg-white rounded-xl border border-gray-200/80 p-3 cursor-grab active:cursor-grabbing shadow-[0_1px_2px_rgba(16,24,40,.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-10px_rgba(16,24,40,.25)] hover:border-brand-200 ${drag?.key === card.key ? 'dragging-card' : ''}`}>
         <div className="flex items-center gap-2">
@@ -274,8 +297,8 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
     const stage = STAGES.find(s => s.id === d.stage);
     return (
       <article key={`d${d.id}`} draggable
-        onDragStart={e => { setDrag({ kind: 'deal', key: `d${d.id}`, deal: d }); e.dataTransfer.effectAllowed = 'move'; }}
-        onDragEnd={() => { setDrag(null); setOverCol(null); }}
+        onDragStart={e => { beginDrag({ kind: 'deal', key: `d${d.id}`, deal: d }); e.dataTransfer.effectAllowed = 'move'; }}
+        onDragEnd={clearDrag}
         title="Перетащите на другой этап"
         className={`relative bg-white rounded-xl border border-gray-200/80 p-3 pl-3.5 cursor-grab active:cursor-grabbing shadow-[0_1px_2px_rgba(16,24,40,.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-10px_rgba(16,24,40,.25)] hover:border-brand-200 ${drag?.key === `d${d.id}` ? 'dragging-card' : ''}`}>
         <span className="absolute left-0 top-3 bottom-3 w-[3px] rounded-full" style={{ background: stage?.color ?? '#94A3B8' }} />
@@ -296,11 +319,11 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
         <div className="text-[13px] font-semibold text-ink leading-snug mt-2 line-clamp-2 cursor-pointer" onClick={() => onOpenDeal(d.id)}>{d.title}</div>
         <div className="text-[14px] font-extrabold text-ink mt-1.5 tabular-nums">{fmtMoney(d.budget)}</div>
         <div className="flex items-center gap-2 mt-2.5 pt-2 border-t border-gray-100">
-          <button type="button" onClick={() => onOpenComms(String(d.authorId))}
+          <button type="button" onClick={() => onOpenComms(String(d.authorId), d.id)}
             className="inline-flex items-center gap-1.5 h-[30px] px-2.5 rounded-lg border border-brand-200 bg-brand-50 text-brand-700 text-[12px] font-bold hover:bg-brand-100 transition-colors">
             <Send size={13} />Написать
           </button>
-          <button type="button" onClick={() => onOpenComms(String(d.authorId))} title="Сообщения — открыть в Коммуникациях"
+          <button type="button" onClick={() => onOpenComms(String(d.authorId), d.id)} title="Сообщения — открыть в Коммуникациях"
             className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted hover:text-brand-600 transition-colors">
             <MessageCircle size={13} />{d.msgs.length}
           </button>
@@ -498,11 +521,11 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
                       <td className="px-3 py-2.5 text-right font-extrabold tabular-nums">{fmtMoney(row.deal.budget)}</td>
                       <td className="px-3 py-2.5 text-muted font-semibold">{row.deal.date}</td>
                       <td className="px-4 py-2 text-right whitespace-nowrap">
-                        <button type="button" onClick={() => onOpenComms(String(row.deal.authorId))} title="Сообщения — открыть в Коммуникациях"
+                        <button type="button" onClick={() => onOpenComms(String(row.deal.authorId), row.deal.id)} title="Сообщения — открыть в Коммуникациях"
                           className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted hover:text-brand-600 transition-colors align-middle mr-2">
                           <MessageCircle size={13} />{row.deal.msgs.length}
                         </button>
-                        <button type="button" onClick={() => onOpenComms(String(row.deal.authorId))}
+                        <button type="button" onClick={() => onOpenComms(String(row.deal.authorId), row.deal.id)}
                           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-brand-600 text-white text-[12px] font-bold hover:bg-brand-700 transition-colors align-middle">
                           <Send size={13} />Написать
                         </button>
@@ -531,6 +554,19 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
               text="Добавьте авторов из поиска Collabrama — они появятся в шорт-листе, или создайте сделку вручную." />
           </div>
         </div>
+      )}
+
+      {dealToDelete && (
+        <Modal onClose={() => { if (!deletingDeal) setDealToDelete(null); }} w="max-w-md">
+          <div className="px-5 py-4">
+            <h3 className="text-[16px] font-bold text-gray-900">Удалить сделку?</h3>
+            <p className="text-[13px] font-medium text-gray-600 leading-relaxed mt-2">Будет удалена только сделка «{dealToDelete.title}». Автор, шорт-лист, другие сделки и переписка сохранятся.</p>
+          </div>
+          <div className="flex justify-end gap-2 px-5 py-3 border-t border-gray-100">
+            <Btn variant="secondary" disabled={deletingDeal} onClick={() => setDealToDelete(null)}>Отмена</Btn>
+            <Btn variant="danger" disabled={deletingDeal} onClick={() => { void confirmRemoveDeal(); }}>{deletingDeal ? 'Удаляем…' : 'Удалить'}</Btn>
+          </div>
+        </Modal>
       )}
 
       {undo && createPortal(

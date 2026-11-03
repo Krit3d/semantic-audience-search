@@ -1,9 +1,9 @@
-import { Bold, BookOpen, Check, Download, FilePlus2, Italic, List, MessageCircle, MoreHorizontal, Share2, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Bold, BookOpen, Check, Download, FilePlus2, GitBranch, Italic, List, MessageCircle, MoreHorizontal, Repeat2, Share2, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { FakeQR, SocialIcon } from '../components/icons';
 import { Avatar, Badge, Btn, CopyBtn, Modal, SidePanel, Tabs, Tip, useToast } from '../components/ui';
 import { ARCHIVED_STAGE, fmtMoney, getStage, resolveAuthor, STAGES, type Deal, type DealMsg } from '../data';
-import { api, type DealMessageItem } from '../services/api';
+import { api, mapDealItemToDeal, type DealMessageItem } from '../services/api';
 import { brandLetter, findBrand, useBrands } from '../services/brands';
 
 type DocType = 'pdf' | 'doc' | 'img' | 'other';
@@ -16,7 +16,34 @@ interface DealDocument {
   url?: string;
 }
 
-export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, onOpenKB, onGenerateContract, onDelete, onOpenAuthor, onOpenComms }: {
+function DealHistory({ deal, deals, onOpenDeal }: { deal: Deal; deals: Deal[]; onOpenDeal: (dealId: string) => void }) {
+  const related = deals.filter(item => item.authorId === deal.authorId);
+  const ids = new Set(related.map(item => item.id));
+  const roots = related.filter(item => !item.parentDealId || !ids.has(item.parentDealId));
+  const renderNode = (item: Deal, ancestors: Set<string>): ReactNode => {
+    if (ancestors.has(item.id)) return null;
+    const nextAncestors = new Set(ancestors).add(item.id);
+    const children = related.filter(candidate => candidate.parentDealId === item.id);
+    const itemStage = getStage(item.stage);
+    return (
+      <li key={item.id}>
+        <button type="button" onClick={() => onOpenDeal(item.id)} className={`w-full flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors ${item.id === deal.id ? 'border-brand-200 bg-brand-50' : 'border-line bg-white hover:border-brand-200'}`}>
+          <span className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0"><GitBranch size={15} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-bold text-ink truncate">{item.title}</span>
+            <span className="block text-[11.5px] text-muted mt-0.5">{item.brandId} · {item.date}</span>
+          </span>
+          {item.id === deal.id && <Badge tone="indigo">Текущая</Badge>}
+          <Badge tone="gray">{itemStage.name}</Badge>
+        </button>
+        {children.length > 0 && <ul className="ml-5 pl-5 mt-2 flex flex-col gap-2 border-l-2 border-brand-100">{children.map(child => renderNode(child, nextAncestors))}</ul>}
+      </li>
+    );
+  };
+  return <ul className="flex flex-col gap-2">{roots.map(root => renderNode(root, new Set()))}</ul>;
+}
+
+export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, onOpenKB, onGenerateContract, onDelete, onOpenAuthor, onOpenComms, onRepeat, onOpenDeal }: {
   deal: Deal;
   deals: Deal[];
   initialTab?: string;
@@ -27,6 +54,8 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
   onDelete?: (dealId: string) => void;
   onOpenAuthor?: (authorId: string) => void;
   onOpenComms?: (authorId: string) => void;
+  onRepeat: (deal: Deal) => void;
+  onOpenDeal: (dealId: string) => void;
 }) {
   const toast = useToast();
   const [tab, setTab] = useState(initialTab ?? 'overview');
@@ -36,6 +65,7 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
   const [deleting, setDeleting] = useState(false);
   const [edit, setEdit] = useState({ title: deal.title, brand: deal.brandId, budget: String(deal.budget), type: deal.type, pubDate: deal.pubDate, terms: deal.terms });
   const [saving, setSaving] = useState(false);
+  const [repeating, setRepeating] = useState(false);
   const tzKey = `creatorflow_tz_${deal.id}`;
   const [termsText, setTermsText] = useState(() => {
     try {
@@ -280,6 +310,7 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
         { id: 'overview', label: 'Обзор' },
         { id: 'comms', label: `Коммуникации · ${deal.msgs.length}`, icon: <MessageCircle size={13} /> },
         { id: 'docs', label: 'Документы' },
+        { id: 'history', label: 'История сделок', icon: <GitBranch size={13} /> },
         // { id: 'erid', label: 'ERID' },
         // { id: 'kb', label: 'База знаний', icon: <BookOpen size={13} /> },
       ]} />
@@ -356,6 +387,24 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
               <Btn className="flex-1" onClick={() => onGenerateContract(deal)}><FilePlus2 size={14} />Сгенерировать договор</Btn>
               <Btn variant="secondary" onClick={remindAuthor}>Напомнить автору</Btn>
             </div>
+            {deal.stage === 6 && (
+              <Btn className="w-full" disabled={repeating} onClick={() => {
+                setRepeating(true);
+                api.repeatDeal(Number(deal.id))
+                  .then(item => onRepeat(mapDealItemToDeal(item)))
+                  .catch(() => { setRepeating(false); toast('err', 'Не удалось создать повторную сделку'); });
+              }}><Repeat2 size={14} />{repeating ? 'Создаём…' : 'Создать повторную сделку'}</Btn>
+            )}
+          </div>
+        )}
+
+        {tab === 'history' && (
+          <div className="p-5 anim-in">
+            <div className="mb-4">
+              <h3 className="m-0 text-[14px] font-bold text-ink">История сделок по брендам</h3>
+              <p className="m-0 mt-1 text-[12px] text-muted">Исходные и последующие сделки автора связаны в дерево.</p>
+            </div>
+            <DealHistory deal={deal} deals={deals} onOpenDeal={onOpenDeal} />
           </div>
         )}
 

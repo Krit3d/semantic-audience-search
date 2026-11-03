@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Check, Image, Maximize2, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Image, Lock, Maximize2, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Empty, ErrorState, Select, SkeletonLines } from '../../components/kit';
 import { Btn, useToast } from '../../components/ui';
@@ -96,6 +96,7 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [tab, setTab] = useState<Tab>('main');
   const [tagFor, setTagFor] = useState<number | null>(null);
   const [tagDraft, setTagDraft] = useState('');
@@ -123,7 +124,7 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
   const putKb = (patch: Partial<BrandKb>) => setDraft(prev => prev ? { ...prev, kb: { ...prev.kb, ...patch } } : prev);
 
   const save = () => {
-    if (!draft || saving) return;
+    if (!draft || saving || uploading) return;
     setSaving(true);
     api.updateBrand(brandId, {
       name: draft.name.trim() || 'Без названия',
@@ -143,13 +144,13 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
   };
 
   const uploadFiles = async (files: FileList | null): Promise<string[] | null> => {
-    if (!files) return null;
+    if (!files || !files.length || uploading) return null;
     const selected = Array.from(files);
     if (selected.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024)) {
       toast('err', 'Допустимы JPEG, PNG и WebP размером до 5 МБ');
       return null;
     }
-    setSaving(true);
+    setUploading(true);
     try {
       const uploaded = await Promise.all(selected.map(file => api.uploadChatFile(file)));
       return uploaded.map(item => item.media_url);
@@ -157,7 +158,7 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
       toast('err', 'Не удалось загрузить изображения');
       return null;
     } finally {
-      setSaving(false);
+      setUploading(false);
     }
   };
 
@@ -181,6 +182,39 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
     if (!uploaded?.[0]) return;
     putKb({ logo_url: uploaded[0] });
     toast('ok', 'Логотип бренда загружен. Сохраните изменения');
+  };
+
+  const togglePayType = (index: number) => {
+    if (!draft) return;
+    putKb({
+      pay_types: draft.kb.pay_types.map((item, i) => i === index
+        ? { ...item, on: !item.on, def: item.on ? false : item.def }
+        : item),
+    });
+  };
+
+  const toggleDefault = (index: number) => {
+    if (!draft) return;
+    const selected = draft.kb.pay_types[index];
+    if (selected.def) {
+      putKb({ pay_types: draft.kb.pay_types.map(item => ({ ...item, def: false })) });
+      return;
+    }
+    putKb({
+      pay_types: [
+        { ...selected, on: true, def: true },
+        ...draft.kb.pay_types.filter((_, i) => i !== index).map(item => ({ ...item, def: false })),
+      ],
+    });
+  };
+
+  const movePayType = (index: number, offset: number) => {
+    if (!draft) return;
+    const target = index + offset;
+    const items = [...draft.kb.pay_types];
+    if (target < 0 || target >= items.length || items[index].def || items[target].def) return;
+    [items[index], items[target]] = [items[target], items[index]];
+    putKb({ pay_types: items });
   };
 
   const requestErid = () => {
@@ -229,9 +263,9 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
           </span>
           <input value={draft.name} onChange={e => put({ name: e.target.value })} placeholder="Название бренда" aria-label="Название бренда"
             className="flex-1 min-w-[220px] border-0 border-b-2 border-transparent bg-transparent py-0.5 font-collab text-[22px] font-semibold text-ink outline-none focus:border-brand-300" />
-          <label className="inline-flex items-center gap-2 h-10 px-3.5 rounded-[10px] border border-brand-200 bg-white text-brand-600 text-[13.5px] font-semibold cursor-pointer hover:bg-brand-50 transition-colors">
-            <Upload size={15} />{draft.kb.logo_url ? 'Заменить логотип' : 'Логотип бренда'}
-            <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => { void uploadLogo(e.target.files); e.target.value = ''; }} />
+          <label className={'inline-flex items-center gap-2 h-10 px-3.5 rounded-[10px] border border-brand-200 bg-white text-brand-600 text-[13.5px] font-semibold transition-colors ' + (uploading ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-brand-50')}>
+            <Upload size={15} />{uploading ? 'Загружаем…' : draft.kb.logo_url ? 'Заменить логотип' : 'Логотип бренда'}
+            <input type="file" disabled={uploading} accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => { void uploadLogo(e.target.files); e.target.value = ''; }} />
           </label>
           <button type="button" onClick={() => { put({ hue: (draft.hue + 70) % 360 }); toast('info', 'Цвет бренда обновлён'); }}
             className="inline-flex items-center gap-2 h-10 px-3.5 rounded-[10px] border border-line bg-white text-gray-700 text-[13.5px] font-semibold hover:border-gray-300 transition-colors">
@@ -241,7 +275,7 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
             className={'inline-flex items-center gap-2 h-9 px-3 rounded-[10px] text-[13.5px] font-bold border transition-colors ' + (active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-line bg-gray-100 text-gray-600')}>
             <span className={'w-2 h-2 rounded-full ' + (active ? 'bg-emerald-500' : 'bg-gray-400')} />{draft.status}
           </button>
-          <Btn onClick={save} disabled={saving} className="!h-10"><Save size={15} />{saving ? 'Сохраняем…' : 'Сохранить'}</Btn>
+          <Btn onClick={save} disabled={saving || uploading} className="!h-10"><Save size={15} />{saving ? 'Сохраняем…' : 'Сохранить'}</Btn>
           <button type="button" aria-label="Закрыть" onClick={onClose} className="w-10 h-10 rounded-[10px] text-gray-500 flex items-center justify-center hover:bg-gray-100 transition-colors"><X size={17} /></button>
         </div>
         <div role="tablist" className="flex flex-wrap gap-1 mt-3">
@@ -391,23 +425,33 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
 
           {tab === 'terms' && (
             <>
+              <div className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-[13.5px] font-semibold text-brand-700">
+                Порядок типов оплаты определяет их приоритет: чем выше тип оплаты, тем выше приоритет
+              </div>
               {draft.kb.pay_types.map((pt, i) => {
                 const upd = (patch: Partial<BrandPayType>) => putKb({ pay_types: draft.kb.pay_types.map((x, j) => j === i ? { ...x, ...patch } : x) });
+                const canMoveUp = !pt.def && i > 0 && !draft.kb.pay_types[i - 1]?.def;
+                const canMoveDown = !pt.def && i < draft.kb.pay_types.length - 1 && !draft.kb.pay_types[i + 1]?.def;
                 return (
                   <div key={i} className={'flex items-center gap-[18px] px-5 py-[18px] rounded-2xl ' + (pt.on ? 'bg-white border border-brand-200' : 'bg-[#fcfcfd] border border-[#eef0f4]')}>
-                    <button type="button" role="switch" aria-checked={pt.on} aria-label={pt.label} onClick={() => upd({ on: !pt.on })}
+                    <button type="button" role="switch" aria-checked={pt.on} aria-label={pt.label} onClick={() => togglePayType(i)}
                       className={'shrink-0 relative w-[46px] h-[26px] rounded-full border transition-colors ' + (pt.on ? 'border-brand-500 bg-brand-500' : 'border-line bg-[#eceef3]')}>
                       <span className="absolute top-[2px] w-5 h-5 rounded-full bg-white shadow transition-all" style={{ left: pt.on ? 22 : 2 }} />
                     </button>
                     <div className="flex-1 min-w-0 flex flex-col gap-2">
                       <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[14px] font-bold text-muted tabular-nums">{i + 1}.</span>
                         {pt.custom ? (
                           <input value={pt.label} onChange={e => upd({ label: e.target.value })} placeholder="Название типа оплаты"
                             className="w-[280px] max-w-full h-[34px] px-2.5 rounded-lg border border-line text-[14.5px] font-bold text-ink outline-none focus:border-brand-300" />
                         ) : (
-                          <span className={'text-[15px] font-bold ' + (pt.on ? 'text-ink' : 'text-muted')}>{pt.on ? `${i + 1}. ` : ''}{pt.label}</span>
+                          <span className={'text-[15px] font-bold ' + (pt.on ? 'text-ink' : 'text-muted')}>{pt.label}</span>
                         )}
-                        {pt.def && pt.on && <span className="text-[12.5px] font-bold px-[9px] py-[3px] rounded-[7px] border border-brand-200 bg-brand-50 text-brand-700">по умолчанию</span>}
+                        {pt.def && pt.on && (
+                          <span className="inline-flex items-center gap-1 text-[12.5px] font-bold px-[9px] py-[3px] rounded-[7px] border border-brand-200 bg-brand-50 text-brand-700">
+                            <Lock size={12} />по умолчанию · порядок закреплён
+                          </span>
+                        )}
                       </div>
                       {pt.on && (
                         <textarea rows={3} maxLength={2000} value={pt.rate} onChange={e => upd({ rate: e.target.value })} placeholder="Описание условий сотрудничества"
@@ -415,14 +459,16 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
                       )}
                     </div>
                     {pt.on && (
-                      <div className="flex flex-col gap-1">
-                        <button type="button" disabled={i === 0} aria-label="Вверх" onClick={() => { const items = [...draft.kb.pay_types]; [items[i - 1], items[i]] = [items[i], items[i - 1]]; putKb({ pay_types: items }); }} className="w-8 h-8 rounded-lg border border-line flex items-center justify-center disabled:opacity-30"><ArrowUp size={14} /></button>
-                        <button type="button" disabled={i === draft.kb.pay_types.length - 1} aria-label="Вниз" onClick={() => { const items = [...draft.kb.pay_types]; [items[i + 1], items[i]] = [items[i], items[i + 1]]; putKb({ pay_types: items }); }} className="w-8 h-8 rounded-lg border border-line flex items-center justify-center disabled:opacity-30"><ArrowDown size={14} /></button>
+                      <div className="flex flex-col gap-1" title={pt.def ? 'Снимите статус «По умолчанию», чтобы переместить тип оплаты' : undefined}>
+                        <button type="button" disabled={!canMoveUp} aria-label="Вверх" onClick={() => movePayType(i, -1)} className="w-8 h-8 rounded-lg border border-line flex items-center justify-center disabled:opacity-30"><ArrowUp size={14} /></button>
+                        <button type="button" disabled={!canMoveDown} aria-label="Вниз" onClick={() => movePayType(i, 1)} className="w-8 h-8 rounded-lg border border-line flex items-center justify-center disabled:opacity-30"><ArrowDown size={14} /></button>
                       </div>
                     )}
-                    {pt.on && !pt.def && (
-                      <button type="button" onClick={() => putKb({ pay_types: draft.kb.pay_types.map((x, j) => ({ ...x, def: j === i })) })}
-                        className="h-[34px] px-2.5 rounded-lg text-gray-600 text-[13.5px] font-semibold hover:bg-gray-100">По умолчанию</button>
+                    {pt.on && (
+                      <button type="button" aria-pressed={pt.def === true} onClick={() => toggleDefault(i)}
+                        className="h-[34px] px-2.5 rounded-lg text-gray-600 text-[13.5px] font-semibold hover:bg-gray-100 whitespace-nowrap">
+                        {pt.def ? 'Снять по умолчанию' : 'По умолчанию'}
+                      </button>
                     )}
                     {pt.custom && (
                       <button type="button" onClick={() => putKb({ pay_types: draft.kb.pay_types.filter((_, j) => j !== i) })} aria-label="Удалить тип оплаты"
@@ -464,25 +510,35 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
               )}
             </div>
             <div className="grid grid-cols-5 gap-2.5">
-              {galleryProduct.gallery.map((url, imageIndex) => (
-                <div key={url} className={'relative rounded-lg border-2 ' + ((galleryProduct.selected_image || galleryProduct.logo_url) === url ? 'border-brand-500' : 'border-transparent')}>
-                  <button type="button" aria-label={`Выбрать логотип ${imageIndex + 1}`} aria-pressed={(galleryProduct.selected_image || galleryProduct.logo_url) === url} onClick={() => putProduct(galleryFor, { selected_image: url, logo_url: url })} className="w-full aspect-square rounded-md overflow-hidden bg-page">
-                    <img src={url} alt={`Вариант логотипа ${imageIndex + 1}`} className="w-full h-full object-cover" />
-                  </button>
-                  <button type="button" aria-label={`Удалить изображение ${imageIndex + 1}`} onClick={() => { const gallery = galleryProduct.gallery.filter((_, index) => index !== imageIndex); const selectedImage = (galleryProduct.selected_image || galleryProduct.logo_url) === url ? gallery[0] ?? '' : galleryProduct.selected_image; putProduct(galleryFor, { gallery, selected_image: selectedImage, logo_url: selectedImage }); }} className="absolute -right-1.5 -top-1.5 w-6 h-6 rounded-full bg-white border border-line text-gray-500 flex items-center justify-center shadow-sm"><X size={11} /></button>
-                </div>
-              ))}
+              {galleryProduct.gallery.map((url, imageIndex) => {
+                const selected = (galleryProduct.selected_image || galleryProduct.logo_url) === url;
+                return (
+                  <div key={`${url}-${imageIndex}`} className={'relative rounded-lg border-2 ' + (selected ? 'border-brand-500' : 'border-transparent')}>
+                    <button type="button" aria-label={`Увеличить изображение ${imageIndex + 1}`} onClick={() => setPreviewImage(url)} className="w-full aspect-square rounded-md overflow-hidden bg-page">
+                      <img src={url} alt={`Изображение продукта ${imageIndex + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                    <button type="button" aria-label={`Выбрать логотип ${imageIndex + 1}`} aria-pressed={selected} onClick={() => putProduct(galleryFor, { selected_image: url, logo_url: url })} className="absolute inset-x-1 bottom-1 min-h-6 px-1 rounded-md bg-white/95 border border-line text-brand-700 text-[10px] font-bold shadow-sm flex items-center justify-center gap-1">
+                      {selected && <Check size={11} />}{selected ? 'Логотип' : 'Выбрать'}
+                    </button>
+                    <button type="button" aria-label={`Удалить изображение ${imageIndex + 1}`} onClick={() => { const gallery = galleryProduct.gallery.filter((_, index) => index !== imageIndex); const selectedImage = selected ? gallery[0] ?? '' : galleryProduct.selected_image; putProduct(galleryFor, { gallery, selected_image: selectedImage, logo_url: selectedImage }); }} className="absolute -right-1.5 -top-1.5 w-6 h-6 rounded-full bg-white border border-line text-gray-500 flex items-center justify-center shadow-sm"><X size={11} /></button>
+                  </div>
+                );
+              })}
               {galleryProduct.gallery.length < 5 && (
-                <label className="aspect-square rounded-lg border-[1.5px] border-dashed border-brand-200 text-brand-600 flex flex-col items-center justify-center gap-1 text-[11px] font-bold cursor-pointer hover:bg-brand-50">
-                  <Upload size={17} />Загрузить
-                  <input type="file" multiple accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => { void uploadGallery(galleryFor, e.target.files); e.target.value = ''; }} />
+                <label className={'aspect-square rounded-lg border-[1.5px] border-dashed border-brand-200 text-brand-600 flex flex-col items-center justify-center gap-1 text-[11px] font-bold ' + (uploading ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-brand-50')}>
+                  <Upload size={17} />{uploading ? 'Загружаем…' : 'Загрузить'}
+                  <input type="file" multiple disabled={uploading} accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => { void uploadGallery(galleryFor, e.target.files); e.target.value = ''; }} />
                 </label>
               )}
               {Array.from({ length: Math.max(0, 4 - galleryProduct.gallery.length) }, (_, placeholderIndex) => (
                 <div key={`empty-${placeholderIndex}`} className="aspect-square rounded-lg border border-dashed border-line bg-page flex items-center justify-center text-gray-300"><Image size={16} /></div>
               ))}
             </div>
-            <div className="text-[12px] text-muted">Выбранное изображение отображается на карточке продукта. Нажмите «Сохранить» в редакторе бренда, чтобы сохранить изменения.</div>
+            <div role="status" aria-live="polite" className={'text-[12px] ' + (galleryProduct.gallery.length >= 5 ? 'font-semibold text-amber-700' : 'text-muted')}>
+              {galleryProduct.gallery.length >= 5
+                ? 'Достигнут лимит: 5 изображений. Удалите одно, чтобы загрузить другое.'
+                : 'Нажмите на миниатюру для полноразмерного просмотра или кнопку «Выбрать», чтобы назначить логотип. Сохраните изменения в редакторе бренда.'}
+            </div>
           </div>
         </div>
       )}

@@ -28,6 +28,7 @@ export interface Deal {
   type: 'Stories' | 'Reels' | 'Пост' | 'Видео' | 'Прямая трансляция';
   stage: number; date: string; pubDate: string;
   msgs: DealMsg[]; file?: string; erid?: string;
+  parentDealId?: string | null;
   desc: string; terms: string; exclusive: boolean; edits: number;
   authorSummary?: { id: string; platform: string; username: string | null; title: string; subscribers_count: number | null; static_avg_er: number | null; category_path: string | null } | null;
 }

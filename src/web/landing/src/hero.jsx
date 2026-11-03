@@ -1,7 +1,7 @@
 import React from "react";
 import { I } from "./icons.jsx";
 import { HeroProductMockup } from "./mockups.jsx";
-import { getCrmLoginUrl, getCrmTrialUrl, isAuthenticated } from "./auth.js";
+import { getCrmLoginUrl, getCrmTrialUrl, getCrmUrl, verifyAuthentication } from "./auth.js";
 import { fetchActiveSubscription, getCrmPricingUrl } from "./subscription.js";
 // Header + Hero with interactive search → loading → results.
 
@@ -30,12 +30,17 @@ const Header = ({ onSearch }) => {
     ['Для кого', '#audience'],
   ];
   const [scrolled, setScrolled] = React.useState(false);
-  const authed = isAuthenticated();
+  const [authed, setAuthed] = React.useState(null);
   React.useEffect(() => {
     const on = () => setScrolled(window.scrollY > 4);
     on();
     window.addEventListener('scroll', on, { passive: true });
     return () => window.removeEventListener('scroll', on);
+  }, []);
+  React.useEffect(() => {
+    let active = true;
+    verifyAuthentication().then((value) => { if (active) setAuthed(value); });
+    return () => { active = false; };
   }, []);
   return (
     <header className={`sticky top-0 z-40 transition-shadow ${scrolled ? 'glass shadow-softer' : 'glass'}`}>
@@ -46,12 +51,12 @@ const Header = ({ onSearch }) => {
         </a>
         <nav className="hidden md:flex items-center gap-1 ml-2"></nav>
         <div className="ml-auto flex items-center gap-2">
-          {authed ? (
+          {authed === null ? null : authed ? (
             <>
               <SubscriptionBadge />
-              <a href="/"
+              <a href={getCrmUrl()}
                  className="btn-primary inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-4 py-1.5">
-                Открыть приложение <I.Arrow size={13} />
+                Войти в приложение <I.Arrow size={13} />
               </a>
             </>
           ) : (

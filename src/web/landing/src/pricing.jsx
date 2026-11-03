@@ -1,6 +1,6 @@
 import React from "react";
 import { I } from "./icons.jsx";
-import { getCrmLoginUrl, getCrmTrialUrl } from "./auth.js";
+import { getCrmLoginUrl, getCrmTrialUrl, getCrmUrl } from "./auth.js";
 import { PageShell } from "./page-shell.jsx";
 // Публичная страница тарифов: доступна без регистрации, покупка — сразу со страницы.
 // Данные — из открытого API /billing/plans. Залогиненным (токен в localStorage) —
@@ -143,8 +143,8 @@ const TrialBanner = () => {
           </button>
         )}
         {state === "done" && (
-          <a href="/" className="btn-primary inline-flex items-center gap-2 px-5 py-3 rounded-xl text-[14px] font-semibold">
-            Открыть приложение <I.Arrow size={14} />
+          <a href={getCrmUrl()} className="btn-primary inline-flex items-center gap-2 px-5 py-3 rounded-xl text-[14px] font-semibold">
+            Войти в приложение <I.Arrow size={14} />
           </a>
         )}
         {state === "used" && null}

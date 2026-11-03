@@ -14,6 +14,15 @@ export function getCrmTrialUrl() {
   return `${getCrmUrl()}/?intent=trial#/login`;
 }
 
-export function isAuthenticated() {
-  return document.cookie.split(/;\s*/).some((entry) => entry === "cf_auth=1");
+export async function verifyAuthentication() {
+  const token = window.localStorage.getItem("creatorflow_token");
+  if (!token) return false;
+  try {
+    const response = await fetch("/api/v1/crm/auth/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }

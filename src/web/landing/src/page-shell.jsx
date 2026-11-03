@@ -1,11 +1,18 @@
 import React from "react";
 import { I } from "./icons.jsx";
 import { Logo } from "./hero.jsx";
-import { getCrmLoginUrl, getCrmTrialUrl, isAuthenticated } from "./auth.js";
+import { getCrmLoginUrl, getCrmTrialUrl, getCrmUrl, verifyAuthentication } from "./auth.js";
 import { openCookieSettings } from "./cookie-consent.js";
 // Общий каркас публичных страниц лендинга (/pricing, /about, /contacts).
 
 export function PageShell({ children }) {
+  const [authed, setAuthed] = React.useState(null);
+  React.useEffect(() => {
+    let active = true;
+    verifyAuthentication().then((value) => { if (active) setAuthed(value); });
+    return () => { active = false; };
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="glass sticky top-0 z-40">
@@ -20,9 +27,9 @@ export function PageShell({ children }) {
             <a href="/contacts" className="inline-flex items-center text-[12.5px] font-semibold text-ink-700 hover:text-ink-900 rounded-full px-3 py-1.5 transition-colors">Контакты</a>
           </nav>
           <div className="ml-auto flex items-center gap-2">
-            {isAuthenticated() ? (
-              <a href="/" className="btn-primary inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-4 py-1.5">
-                Открыть приложение <I.Arrow size={13} />
+            {authed === null ? null : authed ? (
+              <a href={getCrmUrl()} className="btn-primary inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-4 py-1.5">
+                Войти в приложение <I.Arrow size={13} />
               </a>
             ) : (
               <>

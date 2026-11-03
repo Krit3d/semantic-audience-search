@@ -64,7 +64,7 @@ export class SearchApiClient {
 
   async exportToCrmShortlist(accountIds, userEmail) {
     const headers = { "Content-Type": "application/json" };
-    const token = localStorage.getItem("cf_token");
+    const token = localStorage.getItem("creatorflow_token") || localStorage.getItem("cf_token");
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }

@@ -519,6 +519,12 @@ class Deal(Base):
         index=True,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    parent_deal_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("deals.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     stage: Mapped[int] = mapped_column(
         SmallInteger,
         default=1,

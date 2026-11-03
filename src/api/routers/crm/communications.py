@@ -10,6 +10,7 @@ from src.api.schemas import AvailableChannelItem, CommunicationChannelItem, Comm
 from src.api.services.contact_resolver import ContactResolver
 from src.api.services.crm_client import TwentyCrmClient
 from src.api.services.crm_helpers import message_snippet, resolve_account
+from src.api.services.dialog_quota import ensure_dialog_can_be_created
 from src.db.database import Database
 from src.db.models import Account, CreatorMessage, Deal, User, UserShortlist
 
@@ -67,6 +68,7 @@ async def init_communication(
             channel_target = resolution.channel_target if resolution.channel_target else (f"@{account.username.lstrip('@')}" if account.username else "")
         if active_channel_type == "internal":
             active_channel_type = account.platform.lower() if account.platform else "instagram"
+        await ensure_dialog_can_be_created(session, current_user.id, account.id, active_channel_type)
         existing_stmt = (
             select(CreatorMessage.id)
             .where(

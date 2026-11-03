@@ -37,6 +37,7 @@ from src.api.services.crm_helpers import (
     resolve_account,
     resolve_target_for_channel,
 )
+from src.api.services.dialog_quota import ensure_dialog_can_be_created
 from src.db.database import Database
 from src.db.models import Account, Content, Deal, CreatorMessage, User, UserShortlist
 from src.parser.creators.core.contacts import (
@@ -689,6 +690,7 @@ async def send_creator_message(
             resolution = ContactResolver.resolve(account.raw_metadata, account.username)
             target_channel = resolution.channel_type if resolution.channel_type else (account.platform.lower() if account.platform else "instagram")
             target_handle = resolution.channel_target if resolution.channel_target else (f"@{account.username.lstrip('@')}" if account.username else "")
+        await ensure_dialog_can_be_created(session, current_user.id, account.id, target_channel)
         message = CreatorMessage(
             user_id=current_user.id,
             account_id=account.id,

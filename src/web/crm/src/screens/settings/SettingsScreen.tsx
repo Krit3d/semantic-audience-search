@@ -367,8 +367,10 @@ function BrandsSection({ brands, eridRecords, pubs, onOpenBrand, onNewBrand, onA
           return (
             <article key={b.id} className="flex flex-col gap-3 p-3.5 rounded-[14px] border border-line bg-white">
               <div className="flex items-center gap-2.5">
-                <span className="w-[34px] h-[34px] rounded-lg shrink-0 flex items-center justify-center text-[13px] font-extrabold text-white" style={{ background: `linear-gradient(135deg,hsl(${b.hue} 70% 42%),hsl(${b.hue + 25} 65% 32%))` }}>
-                  {(b.name || '?').slice(0, 1).toUpperCase()}
+                <span className="w-[34px] h-[34px] rounded-lg shrink-0 flex items-center justify-center overflow-hidden text-[13px] font-extrabold text-white" style={{ background: `linear-gradient(135deg,hsl(${b.hue} 70% 42%),hsl(${b.hue + 25} 65% 32%))` }}>
+                  {b.kb?.logo_url
+                    ? <img src={b.kb.logo_url} alt={`Логотип ${b.name}`} className="w-full h-full object-contain bg-white" />
+                    : (b.name || '?').slice(0, 1).toUpperCase()}
                 </span>
                 <div className="min-w-0">
                   <div className="text-[14px] font-extrabold text-ink truncate">{b.name}</div>

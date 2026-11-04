@@ -9,6 +9,7 @@ from src.api.schemas import (
     CrmForgotPasswordRequest,
     CrmLoginRequest,
     CrmLoginResponse,
+    CrmProfileUpdateRequest,
     CrmRegisterRequest,
     CrmResetPasswordRequest,
     CrmUserResponse,
@@ -174,7 +175,29 @@ async def crm_me(current_user: User = Depends(get_current_user)) -> CrmUserRespo
         email=current_user.email,
         name=current_user.name or current_user.email.split("@")[0],
         is_admin=current_user.is_admin,
+        instagram_username=current_user.instagram_username,
     )
+
+
+@router.patch("/me", response_model=CrmUserResponse)
+async def update_crm_me(
+    payload: CrmProfileUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> CrmUserResponse:
+    async with db.async_session() as session:
+        user = await session.get(User, current_user.id)
+        if user is None:
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+        user.instagram_username = payload.instagram_username
+        await session.commit()
+        return CrmUserResponse(
+            id=user.id,
+            email=user.email,
+            name=user.name or user.email.split("@")[0],
+            is_admin=user.is_admin,
+            instagram_username=user.instagram_username,
+        )
 
 
 RESET_TOKEN_TTL_HOURS = 1

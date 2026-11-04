@@ -915,7 +915,12 @@ async function addAuthorToCrm(author) {
     userEmail = user.email || "";
   } catch {
   }
-  await api.exportToCrmShortlist([String(accountId)], userEmail);
+  try {
+    await api.exportToCrmShortlist([String(accountId)], userEmail);
+  } catch (err) {
+    if (err.status !== 404 || !(author.username || author.handle) || !author.platform) throw err;
+    await api.addCreatorManual(author);
+  }
   if (window.parent !== window) {
     const targetOrigin = new URL(getCrmBaseUrl(), window.location.origin).origin;
     window.parent.postMessage({ type: "collabrama:shortlist-changed" }, targetOrigin);

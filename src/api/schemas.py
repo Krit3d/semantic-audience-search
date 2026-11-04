@@ -490,6 +490,25 @@ class CrmUserResponse(BaseModel):
     email: str = Field(description="User email")
     name: str = Field(description="Display name")
     is_admin: bool = Field(description="Administrator flag")
+    instagram_username: str | None = None
+
+
+class CrmProfileUpdateRequest(BaseModel):
+    instagram_username: str | None = Field(default=None, max_length=255)
+
+    @field_validator("instagram_username")
+    @classmethod
+    def validate_instagram_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().removeprefix("https://").removeprefix("http://")
+        normalized = normalized.removeprefix("instagram.com/").removeprefix("www.instagram.com/")
+        normalized = normalized.strip().lstrip("@").strip("/")
+        if not normalized:
+            return None
+        if len(normalized) > 30 or not re.fullmatch(r"[A-Za-z0-9._]+", normalized):
+            raise ValueError("Некорректный Instagram username")
+        return normalized
 
 
 class CrmForgotPasswordRequest(BaseModel):

@@ -772,6 +772,13 @@ export const api = {
     return request<Record<string, unknown>>('/auth/me');
   },
 
+  async updateMe(instagramUsername: string): Promise<Record<string, unknown>> {
+    return request<Record<string, unknown>>('/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ instagram_username: instagramUsername }),
+    });
+  },
+
   getCurrentUser(): Record<string, unknown> | null {
     return getStoredUser();
   },

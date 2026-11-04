@@ -115,7 +115,7 @@ const HASH_BY_NAV: Record<NavId, Screen> = {
   pricing: 'pricing', support: 'support',
 };
 
-function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLogout: () => void }) {
+function Shell({ user, onLogout, onUserUpdated }: { user: Record<string, unknown> | null; onLogout: () => void; onUserUpdated: (user: Record<string, unknown>) => void }) {
   const toast = useToast();
   const isAdmin = user?.is_admin === true;
   const [screen, setScreen] = useState<Screen>(screenFromHash);
@@ -221,8 +221,8 @@ function Shell({ user, onLogout }: { user: Record<string, unknown> | null; onLog
       {(screen === 'kanban' || screen === 'deals') && <DealsScreen deals={deals} dealsStatus={dealsStatus} onRetryDeals={loadDeals} setDeals={setDeals} onOpenDeal={openDeal} onNewDeal={() => setNewDeal({})} onOpenComms={(authorId: string, dealId?: string) => handleAuthorChat(String(authorId), dealId)} />}
       {screen === 'authors' && <Authors deals={deals} onOpenProfile={id => { setProfileId(id); setScreen('author'); }} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} onOpenComms={(authorId: string) => handleAuthorChat(String(authorId))} />}
       {screen === 'author' && <AuthorProfile authorId={profileId} deals={deals} onBack={() => setScreen('authors')} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} onOpenDeal={(id, tab) => openDeal(id, tab ?? 'comms')} onOpenComms={(id?: string) => handleAuthorChat(id ? String(id) : String(profileId))} />}
-      {screen === 'comms' && <CommsScreen deals={deals} initialAuthorId={commsAuthorId} initialDealId={commsDealId} onOpenDeal={openDeal} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} />}
-      {screen === 'settings' && <SettingsScreen user={user} onOpenBrand={openBrandEditor} />}
+      {screen === 'comms' && <CommsScreen deals={deals} user={user} initialAuthorId={commsAuthorId} initialDealId={commsDealId} onOpenDeal={openDeal} onOpenSettings={() => handleNavigate('settings')} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} />}
+      {screen === 'settings' && <SettingsScreen user={user} onOpenBrand={openBrandEditor} onUserUpdated={onUserUpdated} />}
       {screen === 'brand' && brandEditorId !== null && <BrandEditorScreen brandId={brandEditorId} key={brandEditorId} onClose={() => { window.location.hash = '#/settings'; }} onOpenRegistry={() => { window.location.hash = '#/settings'; }} />}
       {screen === 'analytics' && <AnalyticsScreen />}
       {screen === 'pricing' && <PricingScreen />}
@@ -610,7 +610,7 @@ export default function App() {
 
   return (
     <ToastProvider>
-      {authed ? (paywall ? <PaywallScreen onLogout={handleLogout} /> : <Shell key={String(user?.id ?? user?.email ?? 'guest')} user={user} onLogout={handleLogout} />) : (
+      {authed ? (paywall ? <PaywallScreen onLogout={handleLogout} /> : <Shell key={String(user?.id ?? user?.email ?? 'guest')} user={user} onLogout={handleLogout} onUserUpdated={setUser} />) : (
         resetToken ? <ResetPasswordScreen token={resetToken} /> : <LoginModal onLogin={handleLogin} />
       )}
       <CookieConsent />

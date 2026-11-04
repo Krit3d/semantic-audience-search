@@ -68,14 +68,26 @@ export class SearchApiClient {
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
-    return this._post("/api/v1/crm/shortlist", { account_ids: accountIds, user_email: userEmail }, null, headers);
+    return this._post("/api/v1/crm/shortlist", { account_ids: accountIds, user_email: userEmail }, null, headers, false);
   }
 
-  async _post(path, payload, signal, extraHeaders) {
-    if (this.controller && !signal) {
+  async addCreatorManual(author) {
+    const headers = { "Content-Type": "application/json" };
+    const token = localStorage.getItem("creatorflow_token") || localStorage.getItem("cf_token");
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return this._post("/api/v1/crm/creators/manual", {
+      platform: author.platform,
+      username: author.username || author.handle,
+      title: author.title || author.username || author.handle,
+      subscribers_count: author.subscribers_count ?? null,
+    }, null, headers, false);
+  }
+
+  async _post(path, payload, signal, extraHeaders, abortPrevious = true) {
+    if (abortPrevious && this.controller && !signal) {
       this.controller.abort();
     }
-    const controller = signal ? null : new AbortController();
+    const controller = signal || !abortPrevious ? null : new AbortController();
     if (controller) {
       this.controller = controller;
     }
@@ -108,7 +120,9 @@ export class SearchApiClient {
       } catch {
         message = `Ошибка сервера (${response.status})`;
       }
-      throw new Error(message);
+      const error = new Error(message);
+      error.status = response.status;
+      throw error;
     }
 
     return response.json();

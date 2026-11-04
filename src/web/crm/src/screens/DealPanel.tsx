@@ -354,15 +354,15 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
             <section>
               <h3 className="text-[12px] font-bold text-gray-400 uppercase tracking-wide mb-3">Этапы сделки</h3>
               <div className="flex items-start">
-                {STAGES.map((s, i) => (
+                {STAGES.filter(s => s.id !== 7).map((s, i) => (
                   <div key={s.id} className="flex-1 flex flex-col items-center relative">
-                    {i > 0 && <span className={`absolute right-1/2 top-[13px] w-full h-[3px] rounded ${i < deal.stage ? 'bg-indigo-400' : 'bg-gray-200'}`} style={{ zIndex: 0 }} />}
-                    <span className={`relative z-10 w-[26px] h-[26px] rounded-full flex items-center justify-center text-[11px] font-extrabold border-2 transition-all ${i + 1 < deal.stage ? 'bg-indigo-500 border-indigo-500 text-white'
-                        : i + 1 === deal.stage ? 'bg-white border-indigo-500 text-indigo-600 pulse-ring'
+                    {i > 0 && <span className={`absolute right-1/2 top-[13px] w-full h-[3px] rounded ${s.id <= deal.stage ? 'bg-indigo-400' : 'bg-gray-200'}`} style={{ zIndex: 0 }} />}
+                    <span className={`relative z-10 w-[26px] h-[26px] rounded-full flex items-center justify-center text-[11px] font-extrabold border-2 transition-all ${s.id < deal.stage ? 'bg-indigo-500 border-indigo-500 text-white'
+                        : s.id === deal.stage ? 'bg-white border-indigo-500 text-indigo-600 pulse-ring'
                           : 'bg-white border-gray-200 text-gray-300'}`}>
-                      {i + 1 < deal.stage ? <Check size={13} /> : i + 1}
+                      {s.id < deal.stage ? <Check size={13} /> : i + 1}
                     </span>
-                    <span className={`text-[10px] font-bold mt-1.5 text-center leading-tight truncate max-w-[85px] ${i + 1 === deal.stage ? 'text-indigo-600' : 'text-gray-400'}`}>{s.name}</span>
+                    <span className={`text-[10px] font-bold mt-1.5 text-center leading-tight truncate max-w-[85px] ${s.id === deal.stage ? 'text-indigo-600' : 'text-gray-400'}`}>{s.name}</span>
                   </div>
                 ))}
               </div>

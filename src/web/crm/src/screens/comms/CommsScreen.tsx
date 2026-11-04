@@ -93,8 +93,9 @@ function VideoPlayer({ src }: { src: string }) {
   );
 }
 
-export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, initialDealId, onNewDeal }: { deals: Deal[]; onOpenDeal?: (id: string) => void; initialAuthorId?: string | null; initialDealId?: string | null; onNewDeal?: (authorId: string, meta?: { name?: string; handle?: string }) => void }) {
+export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, initialAuthorId, initialDealId, onNewDeal }: { deals: Deal[]; user: Record<string, unknown> | null; onOpenDeal?: (id: string) => void; onOpenSettings: () => void; initialAuthorId?: string | null; initialDealId?: string | null; onNewDeal?: (authorId: string, meta?: { name?: string; handle?: string }) => void }) {
   const toast = useToast();
+  const [instagramPromptOpen, setInstagramPromptOpen] = useState(() => !(typeof user?.instagram_username === 'string' && user.instagram_username.trim()));
   const [channels, setChannels] = useState<CommunicationChannelItem[]>([]);
   const [channelsLoading, setChannelsLoading] = useState(true);
   const [channelsError, setChannelsError] = useState<string | null>(null);
@@ -209,12 +210,21 @@ export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, initia
 
   const ch = filtered.find(c => String(c.author_id) === selectedAuthorId) ?? filtered[0] ?? null;
   const a = ch ? channelAuthor(ch) : null;
-  const requestedDealId = ch && initialDealId && deals.some(d => d.id === String(initialDealId) && d.authorId === String(ch.author_id)) ? String(initialDealId) : ch?.deal_id;
+  const requestedDealId = ch && initialDealId && deals.some(d => d.id === String(initialDealId) && d.authorId === String(ch.author_id)) ? String(initialDealId) : null;
   const targetDeal = ch && requestedDealId ? deals.find(d => d.id === String(requestedDealId) && d.authorId === String(ch.author_id)) : undefined;
   const activeDeals = ch ? deals.filter(d => d.authorId === String(ch.author_id) && d.stage >= 1 && d.stage <= 6) : [];
   const activeBudget = activeDeals.reduce((acc, d) => acc + d.budget, 0);
 
   const chatRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const composer = composerRef.current;
+    if (!composer) return;
+    composer.style.height = '0px';
+    composer.style.height = `${Math.min(composer.scrollHeight, 160)}px`;
+    composer.style.overflowY = composer.scrollHeight > 160 ? 'auto' : 'hidden';
+  }, [draft]);
 
   useEffect(() => {
     setActiveChannelType(ch?.channel_type && ch.channel_type !== 'internal' ? ch.channel_type : 'instagram');
@@ -428,7 +438,6 @@ export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, initia
                 <button type="button" aria-expanded={channelMenuOpen} onClick={() => setChannelMenuOpen(open => !open)}
                   className={'rounded-lg border px-2.5 py-1 text-[12px] font-semibold flex items-center gap-1.5 transition-colors ' + (channelToneClasses[activeChannelType.toLowerCase()] || 'border-line bg-gray-50 text-gray-700')}>
                   {formatChannelName(activeChannelType)}
-                  {activeChannelType.toLowerCase() === 'telegram' && <span className="rounded-md border border-emerald-200/80 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Рекомендуется</span>}
                   <ChevronDown size={13} className={'transition-transform ' + (channelMenuOpen ? 'rotate-180' : '')} />
                 </button>
                 {channelMenuOpen && (() => {
@@ -443,7 +452,6 @@ export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, initia
                       }}>
                       <span>{formatChannelName(option.channel_type)}</span>
                       <span className="flex items-center gap-2">
-                        {option.channel_type.toLowerCase() === 'telegram' && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Рекомендуется</span>}
                         {option.channel_type.toLowerCase() === activeChannelType.toLowerCase() && <Check size={14} className="text-brand-600" />}
                       </span>
                     </button>)}
@@ -539,7 +547,7 @@ export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, initia
           <button disabled={isUploading} aria-label="Прикрепить файл" className={'w-9 h-9.5 rounded-lg flex items-center justify-center shrink-0 ' + (isUploading ? 'text-brand-500 cursor-default' : 'text-gray-400 hover:bg-gray-100 hover:text-brand-600')} onClick={() => fileInputRef.current?.click()}>
             {isUploading ? <Loader2 size={17} className="animate-spin" /> : <Paperclip size={17} />}
           </button>
-          <textarea rows={1} value={draft}
+          <textarea ref={composerRef} rows={1} value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
             placeholder={'Сообщение для ' + (a?.nick ?? '') + '…'}
@@ -571,6 +579,20 @@ export default function CommsScreen({ deals, onOpenDeal, initialAuthorId, initia
           <div className="px-5 py-4 border-t border-line flex items-center justify-end gap-2">
             <Btn variant="secondary" size="sm" onClick={() => setConfirmArchive(false)}>Отмена</Btn>
             <Btn size="sm" onClick={handleArchiveConfirm}><Archive size={13} />В архив</Btn>
+          </div>
+        </Modal>
+      )}
+      {instagramPromptOpen && (
+        <Modal onClose={() => setInstagramPromptOpen(false)} w="max-w-md">
+          <div className="px-5 py-4 border-b border-line">
+            <h2 className="m-0 text-[16px] font-collab font-semibold text-ink">Подключите Instagram</h2>
+          </div>
+          <div className="px-5 py-4 text-[13px] text-muted leading-relaxed">
+            Добавьте свой Instagram-аккаунт в настройках профиля, чтобы вести переписку с авторами.
+          </div>
+          <div className="px-5 py-4 border-t border-line flex justify-end gap-2">
+            <Btn variant="secondary" onClick={() => setInstagramPromptOpen(false)}>Позже</Btn>
+            <Btn onClick={onOpenSettings}>Открыть настройки</Btn>
           </div>
         </Modal>
       )}

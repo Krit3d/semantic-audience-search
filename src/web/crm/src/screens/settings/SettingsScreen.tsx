@@ -148,11 +148,14 @@ const initials = (name: string): string => {
   return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase();
 };
 
-export default function SettingsScreen({ user, onOpenBrand }: {
+export default function SettingsScreen({ user, onOpenBrand, onUserUpdated }: {
   user: Record<string, unknown> | null;
   onOpenBrand: (brandId: number) => void;
+  onUserUpdated: (user: Record<string, unknown>) => void;
 }) {
   const toast = useToast();
+  const [instagram, setInstagram] = useState(typeof user?.instagram_username === 'string' ? user.instagram_username : '');
+  const [savingInstagram, setSavingInstagram] = useState(false);
   const [open, setOpen] = useState<Section>('brands');
   const [brands, setBrands] = useState<BrandItem[]>([]);
   const [creators, setCreators] = useState<CreatorRecord[]>([]);
@@ -225,6 +228,21 @@ export default function SettingsScreen({ user, onOpenBrand }: {
             <div className="text-[15px] font-extrabold text-ink">{name || '—'}</div>
             <div className="text-[13px] text-muted">{email || '—'}</div>
           </div>
+          <label className="ml-auto flex items-center gap-2 text-[12.5px] font-semibold text-muted">Instagram
+            <input value={instagram} onChange={event => setInstagram(event.target.value)} placeholder="@username" className="w-48 h-9 px-3 rounded-lg border border-line bg-white text-[13px] text-ink outline-none focus:border-brand-400" />
+          </label>
+          <Btn size="sm" disabled={savingInstagram} onClick={() => {
+            setSavingInstagram(true);
+            api.updateMe(instagram.trim())
+              .then(updated => {
+                api.updateUser(updated);
+                onUserUpdated(updated);
+                setInstagram(typeof updated.instagram_username === 'string' ? updated.instagram_username : '');
+                toast('ok', 'Instagram сохранён');
+              })
+              .catch(() => toast('err', 'Не удалось сохранить Instagram'))
+              .finally(() => setSavingInstagram(false));
+          }}>{savingInstagram ? 'Сохраняем…' : 'Сохранить'}</Btn>
         </section>
 
         <SubscriptionCard />

@@ -49,7 +49,7 @@ const Header = ({ onSearch }) => {
               </a>
             </>
           )}
-          <a href="/landing"
+          <a href="/"
              className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-ink-700 hover:text-ink-900 border border-ink-200 hover:border-ink-300 bg-white/70 rounded-full pl-2.5 pr-3 py-1.5 transition-colors"
              title="Переключить на русский">
             <I.Globe size={14} className="text-ink-500" />

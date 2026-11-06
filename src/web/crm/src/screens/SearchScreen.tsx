@@ -3,7 +3,12 @@ import { useMemo } from 'react';
 export default function SearchScreen() {
   const src = useMemo(() => {
     const base = ((import.meta.env.VITE_SEARCH_URL as string | undefined) || 'https://collabrama.ru').replace(/\/+$/, '');
-    const target = new URL(`${base}/`);
+    const target = new URL(`${base}/internal/search`);
+    const hashQuery = window.location.hash.split('?')[1];
+    if (hashQuery) {
+      const params = new URLSearchParams(hashQuery);
+      params.forEach((value, key) => target.searchParams.set(key, value));
+    }
     const token = localStorage.getItem('creatorflow_token');
     if (token) target.searchParams.set('session_token', token);
     try {

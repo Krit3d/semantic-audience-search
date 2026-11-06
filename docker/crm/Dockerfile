@@ -7,6 +7,7 @@ COPY src/web/crm/package.json src/web/crm/package-lock.json* ./
 RUN npm ci
 
 COPY src/web/crm/ ./
+COPY src/config/iso_countries.json /config/iso_countries.json
 
 ARG VITE_API_URL=/api/v1
 ENV VITE_API_URL=$VITE_API_URL

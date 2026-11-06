@@ -14,10 +14,9 @@ import { userName, api,
 } from '../../services/api';
 import { planTitle } from '../pricing/planMeta';
 import type { Social } from '../../data';
+import InstagramAccounts from './InstagramAccounts';
 
 type Section = 'brands' | 'authors' | 'erid';
-
-const SEARCH_HOME = (import.meta.env.VITE_SEARCH_URL as string | undefined) || 'https://collabrama.ru/';
 
 const ERID_STATUS_STYLE: Record<string, string> = {
   'Заполняют данные': 'bg-violet-50 text-violet-700 border-violet-200',
@@ -131,15 +130,8 @@ const downloadCsv = (filename: string, header: string[], rows: string[][]) => {
 };
 
 const openSimilarSearch = (accountIds: string[]) => {
-  const target = new URL(SEARCH_HOME);
-  target.searchParams.set('similar', accountIds.slice(0, 50).join(','));
-  target.searchParams.set('from', 'crm');
-  const token = api.getToken();
-  if (token) target.searchParams.set('session_token', token);
-  const user = api.getCurrentUser();
-  if (user?.id !== undefined && user?.id !== null) target.searchParams.set('user_id', String(user.id));
-  if (typeof user?.email === 'string') target.searchParams.set('user_email', user.email);
-  window.location.href = target.toString();
+  const params = new URLSearchParams({ similar: accountIds.slice(0, 50).join(','), from: 'crm' });
+  window.location.hash = `#/search?${params.toString()}`;
 };
 
 const initials = (name: string): string => {
@@ -244,6 +236,8 @@ export default function SettingsScreen({ user, onOpenBrand, onUserUpdated }: {
               .finally(() => setSavingInstagram(false));
           }}>{savingInstagram ? 'Сохраняем…' : 'Сохранить'}</Btn>
         </section>
+
+        <InstagramAccounts />
 
         <SubscriptionCard />
 

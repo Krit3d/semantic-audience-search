@@ -189,6 +189,9 @@ export interface CommunicationChannelItem {
   channel_target?: string | null;
   available_channels?: AvailableChannelItem[];
   channel_type: 'telegram' | 'email' | 'whatsapp' | 'instagram' | string;
+  instagram_login?: string | null;
+  instagram_status?: string | null;
+  instagram_deleted?: boolean;
 }
 
 const TOKEN_KEY = 'creatorflow_token';
@@ -468,8 +471,39 @@ export interface SubscriptionStatusInfo {
   trial_available: boolean;
 }
 
-class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+export interface InstagramAccountItem {
+  id: number;
+  login: string;
+  brand_id: number | null;
+  country: string | null;
+  status: 'in_queue' | 'needcheck' | 'ok' | 'bad_password' | 'rate_limit_error' | 'not_logged_in' | 'not_logged_in_bad' | 'email_code' | 'error';
+  last_error_code: string | null;
+  billing: string | null;
+  promo: string | null;
+  remote_status: string | null;
+  action_required: 'password' | 'instagram_notification' | 'two_factor' | 'email_code' | null;
+  stuck: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InstagramAccountPayload {
+  login: string;
+  password: string;
+  country?: string;
+  two_factor?: string;
+  brand_id?: number;
+}
+
+export interface InstagramAccountDeleteResult {
+  status: string;
+  id: number;
+  login: string;
+  was_last_account: boolean;
+}
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string, readonly field?: string | null) {
     super(message);
     this.name = 'ApiError';
   }
@@ -491,15 +525,22 @@ async function request<T>(path: string, init: RequestInit = {}, baseUrl: string 
   }
   if (!response.ok) {
     let detail = `Ошибка запроса (${response.status})`;
+    let code: string | undefined;
+    let field: string | null | undefined;
     if (response.status === 403) detail = 'Недостаточно прав для этого действия';
     if (response.status >= 500) detail = 'Сервер временно недоступен. Попробуйте позже';
     try {
       const body = (await response.json()) as { detail?: unknown };
       if (typeof body.detail === 'string' && response.status !== 403 && response.status < 500) detail = body.detail;
+      if (typeof body.detail === 'object' && body.detail !== null) {
+        const structured = body.detail as { code?: unknown; message?: unknown; field?: unknown };
+        if (typeof structured.message === 'string') detail = structured.message;
+        if (typeof structured.code === 'string') code = structured.code;
+        if (typeof structured.field === 'string' || structured.field === null) field = structured.field;
+      }
     } catch {
-      /* ignore parse failures */
     }
-    throw new ApiError(detail, response.status);
+    throw new ApiError(detail, response.status, code, field);
   }
   return (await response.json()) as T;
 }
@@ -777,6 +818,26 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ instagram_username: instagramUsername }),
     });
+  },
+
+  async getInstagramAccounts(): Promise<InstagramAccountItem[]> {
+    return request<InstagramAccountItem[]>('/instagram-accounts');
+  },
+
+  async addInstagramAccount(payload: InstagramAccountPayload): Promise<InstagramAccountItem> {
+    return request<InstagramAccountItem>('/instagram-accounts', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  async confirmInstagramAccount(accountId: number, payload: { password?: string; two_factor?: string }): Promise<InstagramAccountItem> {
+    return request<InstagramAccountItem>(`/instagram-accounts/${accountId}/confirm`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  async resumeInstagramAccount(accountId: number): Promise<InstagramAccountItem> {
+    return request<InstagramAccountItem>(`/instagram-accounts/${accountId}/resume`, { method: 'POST', body: '{}' });
+  },
+
+  async deleteInstagramAccount(accountId: number): Promise<InstagramAccountDeleteResult> {
+    return request<InstagramAccountDeleteResult>(`/instagram-accounts/${accountId}`, { method: 'DELETE' });
   },
 
   getCurrentUser(): Record<string, unknown> | null {

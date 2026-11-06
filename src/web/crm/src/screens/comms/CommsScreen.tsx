@@ -1,5 +1,5 @@
 import { Archive, ArchiveRestore, Briefcase, Check, ChevronDown, Download, FileText, ImageOff, Loader2, Paperclip, Plus, Search, Send, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SocialIcon } from '../../components/icons';
 import { Empty, ErrorState, SkeletonLines } from '../../components/kit';
 import { Avatar, Badge, Btn, inputCls, Modal, Tip, useToast } from '../../components/ui';
@@ -95,7 +95,7 @@ function VideoPlayer({ src }: { src: string }) {
 
 export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, initialAuthorId, initialDealId, onNewDeal }: { deals: Deal[]; user: Record<string, unknown> | null; onOpenDeal?: (id: string) => void; onOpenSettings: () => void; initialAuthorId?: string | null; initialDealId?: string | null; onNewDeal?: (authorId: string, meta?: { name?: string; handle?: string }) => void }) {
   const toast = useToast();
-  const [instagramPromptOpen, setInstagramPromptOpen] = useState(() => !(typeof user?.instagram_username === 'string' && user.instagram_username.trim()));
+  const [instagramPromptOpen, setInstagramPromptOpen] = useState(false);
   const [channels, setChannels] = useState<CommunicationChannelItem[]>([]);
   const [channelsLoading, setChannelsLoading] = useState(true);
   const [channelsError, setChannelsError] = useState<string | null>(null);
@@ -122,6 +122,18 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
     };
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getInstagramAccounts()
+      .then(accounts => {
+        if (!cancelled) setInstagramPromptOpen(accounts.length === 0);
+      })
+      .catch(() => {
+        if (!cancelled) setInstagramPromptOpen(false);
+      });
+    return () => { cancelled = true; };
   }, []);
 
   const loadChannels = useCallback(() => {
@@ -218,12 +230,13 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
   const chatRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const composer = composerRef.current;
     if (!composer) return;
-    composer.style.height = '0px';
-    composer.style.height = `${Math.min(composer.scrollHeight, 160)}px`;
-    composer.style.overflowY = composer.scrollHeight > 160 ? 'auto' : 'hidden';
+    composer.style.height = '40px';
+    const expanded = composer.scrollHeight > 48;
+    composer.style.height = expanded ? '160px' : '40px';
+    composer.style.overflowY = expanded ? 'auto' : 'hidden';
   }, [draft]);
 
   useEffect(() => {
@@ -433,6 +446,7 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
           <div className="min-w-0">
             <div className="flex items-center gap-2"><span className="text-[14px] font-bold text-ink truncate">{a?.nick ?? ''}</span>{a && <SocialIcon social={a.social} size={13} />}</div>
             {Boolean(targetDeal?.title ?? ch?.deal_title) && <div className="text-[11.5px] font-semibold text-muted truncate">Сделка: {targetDeal?.title ?? ch?.deal_title}</div>}
+            {ch?.instagram_login && <div className={'text-[11px] font-semibold truncate ' + (ch.instagram_deleted ? 'text-red-600' : 'text-violet-600')}>Отправитель: @{ch.instagram_login}{ch.instagram_deleted ? ' · аккаунт удалён' : ch.instagram_status !== 'ok' ? ' · требует действия' : ''}</div>}
             <div className="flex items-center gap-1.5 mt-0.5">
               {ch && <div ref={channelMenuRef} className="relative">
                 <button type="button" aria-expanded={channelMenuOpen} onClick={() => setChannelMenuOpen(open => !open)}
@@ -474,13 +488,13 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
                 {!ch?.is_archived ? (
                   <Tip label="В архив"><Btn variant="ghost" size="sm" onClick={() => { setCloseDeals(true); setConfirmArchive(true); }}><Archive size={14} /></Btn></Tip>
                 ) : (
-                  <Btn variant="secondary" size="sm" onClick={handleRestoreChat}><ArchiveRestore size={13} />Восстановить из архива</Btn>
+                  ch?.instagram_deleted ? <span className="text-[11.5px] font-semibold text-muted max-w-[220px]">Для восстановления повторно добавьте @{ch.instagram_login}</span> : <Btn variant="secondary" size="sm" onClick={handleRestoreChat}><ArchiveRestore size={13} />Восстановить из архива</Btn>
                 )}
               </>
             ) : ch?.is_archived ? (
               <>
                 <Tip label="Восстановите автора из архива, чтобы оформить сделку"><Btn size="sm" disabled className="opacity-40 cursor-not-allowed pointer-events-none"><Plus size={13} />Оформить сделку</Btn></Tip>
-                <Btn variant="secondary" size="sm" onClick={handleRestoreChat}><ArchiveRestore size={13} />Восстановить из архива</Btn>
+                ch?.instagram_deleted ? <span className="text-[11.5px] font-semibold text-muted max-w-[220px]">Для восстановления повторно добавьте @{ch.instagram_login}</span> : <Btn variant="secondary" size="sm" onClick={handleRestoreChat}><ArchiveRestore size={13} />Восстановить из архива</Btn>
               </>
             ) : (
               <>
@@ -550,9 +564,10 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
           <textarea ref={composerRef} rows={1} value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder={'Сообщение для ' + (a?.nick ?? '') + '…'}
-            className="flex-1 resize-none rounded-xl border border-line px-3.5 py-2.5 text-[13px] leading-snug outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-100 transition-shadow" />
-          <Btn onClick={send} disabled={(!draft.trim() && !attachedFile) || isUploading} className="!rounded-xl !w-9.5 !h-9.5 !p-0 shrink-0"><Send size={15} /></Btn>
+            disabled={ch?.instagram_deleted}
+            placeholder={ch?.instagram_deleted ? 'Повторно добавьте удалённый Instagram-аккаунт, чтобы продолжить диалог' : 'Сообщение для ' + (a?.nick ?? '') + '…'}
+            className="flex-1 resize-none scroll-thin rounded-xl border border-line px-3.5 py-2.5 text-[13px] leading-snug outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-100 transition-shadow disabled:opacity-60" />
+          <Btn onClick={send} disabled={(!draft.trim() && !attachedFile) || isUploading || ch?.instagram_deleted} className="!rounded-xl !w-9.5 !h-9.5 !p-0 shrink-0"><Send size={15} /></Btn>
         </div>
       </div>
       {newChatOpen && <NewChatModal channels={channels} onClose={() => setNewChatOpen(false)} onStart={handleStartChat} />}

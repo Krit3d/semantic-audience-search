@@ -67,6 +67,8 @@ def _configure_external_loggers() -> None:
         "telethon.crypto",
         "asyncio",
         "urllib3",
+        "httpx",
+        "httpcore",
     ]
 
     for logger_name in noisy_loggers:

@@ -499,6 +499,13 @@ class Settings(BaseSettings):
     bridgit_account_login: str | None = Field(default=None, description="Connected Instagram account login for Bridgit")
     bridgit_base_url: str = Field(default="https://app.bridgit.me/api/public/v3", description="Bridgit API base URL")
     bridgit_poll_interval_s: int = Field(default=15, description="Poll interval in seconds for Bridgit delivery stats verification")
+    bridgit_encryption_key: str | None = Field(default=None, description="Base64-encoded 32-byte key for Instagram password encryption")
+    bridgit_http_timeout_s: float = Field(default=30.0, ge=1.0, le=120.0)
+    bridgit_get_retries: int = Field(default=3, ge=0, le=3)
+    bridgit_account_poll_interval_s: int = Field(default=60, ge=60)
+    bridgit_account_sync_interval_s: int = Field(default=86400, ge=3600)
+    bridgit_account_stuck_after_s: int = Field(default=1200, ge=1200)
+    bridgit_account_worker_lease_s: int = Field(default=120, ge=30)
 
     # ---- Billing (CloudPayments) settings ----
     cloudpayments_secret_key: str | None = Field(

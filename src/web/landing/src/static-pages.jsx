@@ -87,7 +87,7 @@ const CONTACT_CARDS = [
   {
     title: "Сайт платформы",
     value: "collabrama.ru",
-    href: "/landing",
+    href: "/",
     note: "Лендинг, поиск авторов и материалы о платформе.",
   },
 ];

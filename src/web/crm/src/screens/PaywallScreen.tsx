@@ -169,7 +169,7 @@ export default function PaywallScreen({ onLogout }: { onLogout: () => void }) {
         </div>
         <div className="flex flex-wrap items-center justify-center gap-4 text-[12.5px] font-semibold">
           <a href="mailto:support@collabrama.ru" className="text-indigo-600 hover:text-indigo-700">Написать в поддержку</a>
-          <a href={`${PUBLIC_PRICING_URL.replace(/\/pricing$/, '')}/landing`} className="text-gray-500 hover:text-gray-700">Вернуться на лендинг</a>
+          <a href={`${PUBLIC_PRICING_URL.replace(/\/pricing$/, '')}/`} className="text-gray-500 hover:text-gray-700">Вернуться на лендинг</a>
           <button type="button" onClick={onLogout} className="inline-flex items-center gap-1.5 text-gray-500 hover:text-red-600">
             <LogOut size={14} />Выйти из аккаунта
           </button>

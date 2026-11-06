@@ -17,7 +17,7 @@ export function PageShell({ children }) {
     <div className="min-h-screen flex flex-col">
       <header className="glass sticky top-0 z-40">
         <div className="max-w-[1200px] mx-auto px-5 sm:px-8 h-16 flex items-center gap-6">
-          <a href="/landing" className="flex items-center gap-2">
+          <a href="/" className="flex items-center gap-2">
             <Logo />
             <span className="font-bold tracking-tight text-[17px]">Collabrama</span>
           </a>

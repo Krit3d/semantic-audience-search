@@ -7,8 +7,6 @@ import { Select, Skeleton, Empty, ErrorState } from '../../components/kit';
 import { SocialIcon } from '../../components/icons';
 import { api, mapDealItemToDeal, normalizeSocial, type BrandItem, type ShortlistItem } from '../../services/api';
 
-const SEARCH_HOME = (import.meta.env.VITE_SEARCH_URL as string | undefined) || 'https://collabrama.ru/';
-
 const TYPE_STYLE: Record<string, string> = {
   Stories: 'bg-violet-50 text-violet-700 border-violet-200',
   Reels: 'bg-sky-50 text-sky-700 border-sky-200',
@@ -246,15 +244,8 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
       toast('info', 'Шорт-лист пуст — добавьте авторов из поиска');
       return;
     }
-    const target = new URL(SEARCH_HOME);
-    target.searchParams.set('similar', ids.slice(0, 50).join(','));
-    target.searchParams.set('from', 'crm');
-    const token = api.getToken();
-    if (token) target.searchParams.set('session_token', token);
-    const user = api.getCurrentUser();
-    if (user?.id !== undefined && user?.id !== null) target.searchParams.set('user_id', String(user.id));
-    if (typeof user?.email === 'string') target.searchParams.set('user_email', user.email);
-    window.location.href = target.toString();
+    const params = new URLSearchParams({ similar: ids.slice(0, 50).join(','), from: 'crm' });
+    window.location.hash = `#/search?${params.toString()}`;
   };
 
   const renderShortCard = (card: ShortCard) => {

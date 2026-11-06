@@ -9,6 +9,8 @@ from pathlib import Path
 from urllib.parse import unquote
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
@@ -25,7 +27,6 @@ from src.config.config import MEDIA_DIR, load_settings
 from src.db.database import Database
 from src.embeddings.qdrant_service import QdrantService
 from src.graph.client import Neo4jClient
-from src.utils.security import AUTH_COOKIE_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,21 @@ app = FastAPI(
 security = HTTPBasic()
 
 
+@app.exception_handler(RequestValidationError)
+async def handle_request_validation_error(request: Request, exc: RequestValidationError) -> Response:
+    if request.url.path.startswith("/api/v1/crm/instagram-accounts"):
+        errors = exc.errors()
+        field = None
+        if errors and errors[0].get("loc"):
+            location = errors[0]["loc"]
+            field = str(location[-1])
+        return JSONResponse(
+            status_code=400,
+            content={"detail": {"code": "validation_error", "message": "Некорректные параметры запроса", "field": field}},
+        )
+    return await request_validation_exception_handler(request, exc)
+
+
 def verify_docs_credentials(
     request: Request,
     credentials: HTTPBasicCredentials = Depends(security),
@@ -182,10 +198,10 @@ class SecurityHeadersMiddleware:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
                 for header, value in SECURITY_HEADERS.items():
-                    if scope.get("path") in {"/", "/landing", "/landing/"} and header == "X-Frame-Options":
+                    if scope.get("path") in {"/", "/internal/search"} and header == "X-Frame-Options":
                         continue
                     headers[header] = value
-                if scope.get("path") in {"/", "/landing", "/landing/"}:
+                if scope.get("path") in {"/", "/internal/search"}:
                     headers["Content-Security-Policy"] = "frame-ancestors 'self' https://crm.collabrama.ru"
             await send(message)
 
@@ -256,26 +272,18 @@ def _render_landing(settings, page: str = "index") -> HTMLResponse | None:
 @app.get("/", response_class=HTMLResponse)
 @app.get("/index.html", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
-    settings = request.app.state.settings
-    if request.cookies.get(AUTH_COOKIE_NAME) != "1":
-        landing = _render_landing(settings)
-        if landing is not None:
-            return landing
-    return _render_search_index(settings)
-
-
-@app.get("/landing", response_class=HTMLResponse)
-@app.get("/landing/", response_class=HTMLResponse)
-async def landing(request: Request) -> HTMLResponse:
-    settings = request.app.state.settings
-    page = _render_landing(settings)
+    page = _render_landing(request.app.state.settings)
     if page is None:
         raise HTTPException(status_code=404, detail="Лендинг не собран")
     return page
 
 
+@app.get("/internal/search", response_class=HTMLResponse, include_in_schema=False)
+async def internal_search(request: Request) -> HTMLResponse:
+    return _render_search_index(request.app.state.settings)
+
+
 @app.get("/en.html", response_class=HTMLResponse)
-@app.get("/landing/en.html", response_class=HTMLResponse)
 async def landing_en(request: Request) -> HTMLResponse:
     settings = request.app.state.settings
     page = _render_landing(settings, page="en")

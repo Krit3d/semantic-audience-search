@@ -627,6 +627,8 @@ class DealItem(BaseModel):
     last_message: CreatorMessageItem | None = None
     unread_count: int = 0
     erid: str | None = None
+    instagram_account_id: int | None = None
+    instagram_deletion_archived_at: datetime | None = None
 
 
 class DealCreateRequest(BaseModel):
@@ -681,6 +683,9 @@ class CommunicationChannelItem(BaseModel):
     channel_type: str
     channel_target: str | None = None
     available_channels: list[AvailableChannelItem] = Field(default_factory=list)
+    instagram_login: str | None = None
+    instagram_status: str | None = None
+    instagram_deleted: bool = False
 
 
 class CommunicationInitRequest(BaseModel):

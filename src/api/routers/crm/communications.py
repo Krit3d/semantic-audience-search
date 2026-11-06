@@ -12,7 +12,7 @@ from src.api.services.crm_client import TwentyCrmClient
 from src.api.services.crm_helpers import message_snippet, resolve_account
 from src.api.services.dialog_quota import ensure_dialog_can_be_created
 from src.db.database import Database
-from src.db.models import Account, CreatorMessage, Deal, User, UserShortlist
+from src.db.models import Account, CreatorMessage, Deal, User, UserInstagramAccount, UserShortlist
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +137,7 @@ async def init_communication(
         shortlist_result = await session.execute(shortlist_stmt)
         shortlist_entry = shortlist_result.scalar_one_or_none()
         is_archived = bool(shortlist_entry and shortlist_entry.status == "В архиве")
+        sender = await session.get(UserInstagramAccount, deal.instagram_account_id) if deal and deal.instagram_account_id else None
         await session.commit()
         return CommunicationChannelItem(
             id=str(account.id),
@@ -158,6 +159,9 @@ async def init_communication(
             channel_type=active_channel_type,
             channel_target=channel_target,
             available_channels=available_channels,
+            instagram_login=sender.normalized_login if sender else None,
+            instagram_status=sender.status if sender else None,
+            instagram_deleted=sender.deleted_at is not None if sender else False,
         )
 
 
@@ -187,6 +191,11 @@ async def list_communications(
         )
         deals_result = await session.execute(deals_stmt)
         deals = list(deals_result.scalars().all())
+        sender_ids = {deal.instagram_account_id for deal in deals if deal.instagram_account_id is not None}
+        sender_map: dict[int, UserInstagramAccount] = {}
+        if sender_ids:
+            sender_result = await session.execute(select(UserInstagramAccount).where(UserInstagramAccount.id.in_(sender_ids)))
+            sender_map = {sender.id: sender for sender in sender_result.scalars().all()}
 
         unread_stmt = (
             select(CreatorMessage.account_id, func.count(CreatorMessage.id))
@@ -256,6 +265,7 @@ async def list_communications(
             target = ContactResolver.resolve_channel_target(account.raw_metadata, account.username, channel_type) if account is not None else None
             channel_target = (last_message.channel_target if last_message and last_message.channel_target and raw_channel_type != "internal" else target) or ""
             last_time = last_message.created_at if last_message else (best_deal.updated_at if best_deal else (account.created_at if account else datetime.now(timezone.utc)))
+            sender = sender_map.get(best_deal.instagram_account_id) if best_deal and best_deal.instagram_account_id else None
             channels.append(
                 CommunicationChannelItem(
                     id=str(account_id),
@@ -277,6 +287,9 @@ async def list_communications(
                     channel_type=channel_type,
                     channel_target=channel_target,
                     available_channels=available_schemas,
+                    instagram_login=sender.normalized_login if sender else None,
+                    instagram_status=sender.status if sender else None,
+                    instagram_deleted=sender.deleted_at is not None if sender else False,
                 )
             )
     channels.sort(key=lambda channel: channel.last_message_time, reverse=True)

@@ -9,6 +9,7 @@ from src.api.routers.crm import (
     creators,
     deals,
     erid,
+    instagram_accounts,
     media,
     oauth,
     webhooks,
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/crm")
 router.include_router(auth.router)
 router.include_router(oauth.router)
 router.include_router(webhooks.router)
+router.include_router(instagram_accounts.router)
 router.include_router(media.router, dependencies=_subscription)
 router.include_router(creators.router, dependencies=_subscription)
 router.include_router(deals.router, dependencies=_subscription)

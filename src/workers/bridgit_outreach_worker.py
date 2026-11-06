@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from src.api.services.bridgit_client import BridgitAPIError, BridgitClient
 from src.config.config import Settings, load_settings
 from src.db.database import Database
-from src.db.models import Account, CreatorMessage
+from src.db.models import Account, CreatorMessage, UserInstagramAccount
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +55,9 @@ class BridgitOutreachWorker:
         )
 
     async def start(self) -> None:
-        if not self._settings.bridgit_api_key or not self._settings.bridgit_account_login:
+        if not self._settings.bridgit_api_key:
             logger.error(
-                "Bridgit API key or account login is not configured; worker will not start"
+                "Bridgit API key is not configured; worker will not start"
             )
             return
 
@@ -102,22 +102,6 @@ class BridgitOutreachWorker:
                     )
                 except asyncio.TimeoutError:
                     pass
-                continue
-
-            try:
-                status = await self._client.get_account_status()
-            except Exception as exc:
-                logger.warning("Account status check error: %s", exc)
-                await self._requeue_batch(batch)
-                await asyncio.sleep(self._poll_interval)
-                continue
-
-            if status.get("result") != "ok":
-                logger.warning(
-                    "Bridgit account status is not ok: %s", status.get("result")
-                )
-                await self._requeue_batch(batch)
-                await asyncio.sleep(self._poll_interval)
                 continue
 
             for task in batch:
@@ -174,6 +158,7 @@ class BridgitOutreachWorker:
                             "account_id": message.account_id,
                             "channel_target": message.channel_target,
                             "user_id": message.user_id,
+                            "sender_instagram_account_id": message.sender_instagram_account_id,
                         }
                     )
                     message.external_message_id = SENDING_MARKER
@@ -204,11 +189,26 @@ class BridgitOutreachWorker:
             ).rstrip("/")
             media_url = f"{base_url}{media_url}"
 
+        sender_login = None
+        if task.get("sender_instagram_account_id"):
+            async with self._session_factory() as session:
+                sender = await session.get(UserInstagramAccount, task["sender_instagram_account_id"])
+                if sender is None or sender.deleted_at is not None or sender.status != "ok":
+                    async with session.begin():
+                        await session.execute(
+                            update(CreatorMessage)
+                            .where(CreatorMessage.id == task["id"])
+                            .values(external_message_id="FAILED:instagram_sender_unavailable")
+                        )
+                    return
+                sender_login = sender.normalized_login
+
         try:
             await self._client.send_direct_message(
                 recipient=recipient,
                 text=task.get("text") or "",
                 media_url=media_url,
+                login=sender_login,
             )
             external_id = f"{QUEUED_PREFIX}{task['id']}:{int(time.time())}"
         except Exception as exc:

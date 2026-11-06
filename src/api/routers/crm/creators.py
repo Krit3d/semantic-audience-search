@@ -38,8 +38,9 @@ from src.api.services.crm_helpers import (
     resolve_target_for_channel,
 )
 from src.api.services.dialog_quota import ensure_dialog_can_be_created
+from src.api.services.instagram_dialogs import is_instagram_deletion_locked
 from src.db.database import Database
-from src.db.models import Account, Content, Deal, CreatorMessage, User, UserShortlist
+from src.db.models import Account, Content, Deal, CreatorMessage, User, UserInstagramAccount, UserShortlist
 from src.parser.creators.core.contacts import (
     is_valid_email,
     is_valid_telegram_handle,
@@ -435,6 +436,9 @@ async def crm_update_creator_status(
         account = await resolve_account(session, crm_client, creator_id, current_user.email)
         if account is None:
             raise HTTPException(status_code=404, detail="Автор не найден")
+        shortlist = await session.get(UserShortlist, (current_user.id, account.id))
+        if mapped_status != "В архиве" and is_instagram_deletion_locked(shortlist):
+            raise HTTPException(status_code=409, detail="Чат можно восстановить только повторным добавлением удалённого Instagram-аккаунта")
         now = datetime.now(timezone.utc)
         await session.execute(
             pg_insert(UserShortlist)
@@ -690,12 +694,18 @@ async def send_creator_message(
             resolution = ContactResolver.resolve(account.raw_metadata, account.username)
             target_channel = resolution.channel_type if resolution.channel_type else (account.platform.lower() if account.platform else "instagram")
             target_handle = resolution.channel_target if resolution.channel_target else (f"@{account.username.lstrip('@')}" if account.username else "")
+        sender = None
+        if target_channel == "instagram":
+            sender = await session.get(UserInstagramAccount, deal.instagram_account_id) if deal and deal.instagram_account_id else None
+            if sender is None or sender.user_id != current_user.id or sender.deleted_at is not None or sender.status != "ok":
+                raise HTTPException(status_code=409, detail="Instagram-аккаунт сделки недоступен или удалён")
         await ensure_dialog_can_be_created(session, current_user.id, account.id, target_channel)
         message = CreatorMessage(
             user_id=current_user.id,
             account_id=account.id,
             deal_id=deal.id if deal else None,
             sender_type="user",
+            sender_instagram_account_id=sender.id if sender else None,
             text=payload.text.strip() if payload.text else None,
             channel_type=target_channel,
             channel_target=target_handle,
@@ -743,6 +753,9 @@ async def remove_from_shortlist(
             numeric_id = int(account_id)
         except ValueError:
             raise HTTPException(status_code=400, detail="Некорректный идентификатор автора")
+        shortlist = await session.get(UserShortlist, (current_user.id, numeric_id))
+        if is_instagram_deletion_locked(shortlist):
+            raise HTTPException(status_code=409, detail="Чат можно восстановить только повторным добавлением удалённого Instagram-аккаунта")
         stmt = delete(UserShortlist).where(
             and_(
                 UserShortlist.user_id == current_user.id,

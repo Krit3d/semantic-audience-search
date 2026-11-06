@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     Integer,
+    LargeBinary,
     Numeric,
     DateTime,
     UniqueConstraint,
@@ -552,6 +553,9 @@ class Deal(Base):
         String(50), nullable=True, default=None
     )
     terms: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    instagram_account_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("user_instagram_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    instagram_deletion_archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stage_before_instagram_deletion: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -601,6 +605,7 @@ class CreatorMessage(Base):
         nullable=True,
     )
     sender_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    sender_instagram_account_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("user_instagram_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     channel_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     channel_target: Mapped[str | None] = mapped_column(String(255), nullable=True)
     external_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -654,6 +659,8 @@ class UserShortlist(Base):
         nullable=True,
         comment="Manager custom notes for this shortlist entry",
     )
+    instagram_deletion_account_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    status_before_instagram_deletion: Mapped[str | None] = mapped_column(String(30), nullable=True)
     custom_cpm: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
@@ -1107,3 +1114,56 @@ class PaymentEvent(Base):
 
     def __repr__(self) -> str:
         return f"<PaymentEvent(id={self.id}, event_type={self.event_type}, user_id={self.user_id})>"
+
+
+class UserInstagramAccount(Base):
+    __tablename__ = "user_instagram_accounts"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('in_queue', 'needcheck', 'ok', 'bad_password', 'rate_limit_error', 'not_logged_in', 'not_logged_in_bad', 'email_code', 'error', 'deleted')",
+            name="ck_user_instagram_accounts_status",
+        ),
+        CheckConstraint("country IS NULL OR country ~ '^[a-z]{2}$'", name="ck_user_instagram_accounts_country"),
+        Index("ix_user_instagram_accounts_poll", "next_poll_at", "deleted_at"),
+        Index("ix_user_instagram_accounts_lease", "lease_expires_at"),
+        Index(
+            "uq_user_instagram_accounts_active_login",
+            "user_id",
+            "normalized_login",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        Index(
+            "uq_user_instagram_accounts_active_brand",
+            "brand_id",
+            unique=True,
+            postgresql_where=text("brand_id IS NOT NULL AND deleted_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    brand_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("brands.id", ondelete="SET NULL"), nullable=True, index=True)
+    login: Mapped[str] = mapped_column(String(254), nullable=False)
+    normalized_login: Mapped[str] = mapped_column(String(254), nullable=False)
+    country: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    password_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    password_nonce: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="in_queue", server_default="in_queue", nullable=False)
+    last_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    billing: Mapped[str | None] = mapped_column(Text, nullable=True)
+    promo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    remote_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    confirmation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stuck_warning_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+
+    user: Mapped["User"] = relationship()
+    brand: Mapped["Brand | None"] = relationship()

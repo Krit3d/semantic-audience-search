@@ -37,10 +37,16 @@ from src.api.services.crm_helpers import (
     resolve_account,
     resolve_target_for_channel,
 )
+from src.api.services.communication_domain import (
+    CommunicationServiceError,
+    ensure_active_thread,
+    ensure_legacy_thread,
+    record_outgoing_message,
+)
 from src.api.services.dialog_quota import ensure_dialog_can_be_created
 from src.api.services.instagram_dialogs import is_instagram_deletion_locked
 from src.db.database import Database
-from src.db.models import Account, Content, Deal, CreatorMessage, User, UserInstagramAccount, UserShortlist
+from src.db.models import Account, Content, Deal, CreatorMessage, User, UserShortlist
 from src.parser.creators.core.contacts import (
     is_valid_email,
     is_valid_telegram_handle,
@@ -630,6 +636,12 @@ async def get_creator_messages(
         account = await resolve_account(session, crm_client, creator_id)
         if account is None:
             raise HTTPException(status_code=404, detail="Автор не найден")
+        await ensure_legacy_thread(
+            session,
+            user_id=current_user.id,
+            author_account_id=account.id,
+            deal=None,
+        )
         update_stmt = (
             update(CreatorMessage)
             .where(
@@ -694,18 +706,12 @@ async def send_creator_message(
             resolution = ContactResolver.resolve(account.raw_metadata, account.username)
             target_channel = resolution.channel_type if resolution.channel_type else (account.platform.lower() if account.platform else "instagram")
             target_handle = resolution.channel_target if resolution.channel_target else (f"@{account.username.lstrip('@')}" if account.username else "")
-        sender = None
-        if target_channel == "instagram":
-            sender = await session.get(UserInstagramAccount, deal.instagram_account_id) if deal and deal.instagram_account_id else None
-            if sender is None or sender.user_id != current_user.id or sender.deleted_at is not None or sender.status != "ok":
-                raise HTTPException(status_code=409, detail="Instagram-аккаунт сделки недоступен или удалён")
         await ensure_dialog_can_be_created(session, current_user.id, account.id, target_channel)
         message = CreatorMessage(
             user_id=current_user.id,
             account_id=account.id,
             deal_id=deal.id if deal else None,
             sender_type="user",
-            sender_instagram_account_id=sender.id if sender else None,
             text=payload.text.strip() if payload.text else None,
             channel_type=target_channel,
             channel_target=target_handle,
@@ -715,6 +721,32 @@ async def send_creator_message(
             media_type=payload.media_type,
         )
         session.add(message)
+        await session.flush()
+        if target_channel == "instagram":
+            try:
+                channel, thread, sender = await ensure_active_thread(
+                    session,
+                    user_id=current_user.id,
+                    author_account=account,
+                    deal=deal,
+                    platform="instagram",
+                )
+            except CommunicationServiceError as error:
+                raise HTTPException(
+                    status_code=error.status_code,
+                    detail={"code": error.code, "message": error.message},
+                ) from None
+            if deal is not None:
+                deal.instagram_account_id = sender.legacy_account_id
+            message.sender_instagram_account_id = sender.legacy_account_id
+            await record_outgoing_message(
+                session,
+                message=message,
+                channel=channel,
+                thread=thread,
+                sender=sender,
+                deal=deal,
+            )
         await session.commit()
         await session.refresh(message)
         return message_item(message)

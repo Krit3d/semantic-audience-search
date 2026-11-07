@@ -607,6 +607,12 @@ class CreatorMessageItem(BaseModel):
     media_url: str | None = None
     media_name: str | None = None
     media_type: str | None = None
+    thread_id: int | None = None
+    sender_account_id: int | None = None
+    provider_queue_id: str | None = None
+    delivery_status: str | None = None
+    edited_at: datetime | None = None
+    deleted_at: datetime | None = None
 
 
 class DealItem(BaseModel):
@@ -627,6 +633,10 @@ class DealItem(BaseModel):
     last_message: CreatorMessageItem | None = None
     unread_count: int = 0
     erid: str | None = None
+    brand_id: int | None = None
+    communication_state: str = "no_channel"
+    primary_thread_id: int | None = None
+    last_contact_at: datetime | None = None
     instagram_account_id: int | None = None
     instagram_deletion_archived_at: datetime | None = None
 
@@ -661,6 +671,40 @@ class CreatorSendMessageRequest(BaseModel):
     media_type: str | None = None
 
 
+class ChannelReplaceRequest(BaseModel):
+    sender_account_id: int | None = Field(default=None, strict=True, gt=0)
+
+
+class DealActivityItem(BaseModel):
+    id: int
+    event_type: str
+    description: str | None
+    thread_id: int | None
+    channel_identity_id: int | None
+    message_id: int | None
+    from_stage: int | None
+    to_stage: int | None
+    created_at: datetime
+
+
+class ChannelIdentityItem(BaseModel):
+    id: int
+    sender_account_id: int
+    sender_login: str
+    platform: str
+    status: str
+    replaced_by_id: int | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DealTaskItem(BaseModel):
+    id: int
+    title: str
+    created_at: datetime
+    completed_at: datetime | None
+
+
 class AvailableChannelItem(BaseModel):
     channel_type: str
     channel_target: str
@@ -686,6 +730,16 @@ class CommunicationChannelItem(BaseModel):
     instagram_login: str | None = None
     instagram_status: str | None = None
     instagram_deleted: bool = False
+    communication_state: str | None = None
+    primary_thread_id: int | None = None
+    channel_identity_id: int | None = None
+    can_send: bool = False
+
+
+class CommunicationAccountAvailability(BaseModel):
+    total_accounts: int
+    working_accounts: int
+    has_working_account: bool
 
 
 class CommunicationInitRequest(BaseModel):

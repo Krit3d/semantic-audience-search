@@ -503,6 +503,10 @@ class User(Base):
 class Deal(Base):
     __tablename__ = "deals"
     __table_args__ = (
+        CheckConstraint(
+            "communication_state IN ('active', 'interrupted', 'recontact_required', 'resumed', 'no_channel')",
+            name="ck_deals_communication_state",
+        ),
         Index("ix_deals_user_stage", "user_id", "stage"),
         Index("ix_deals_user_account", "user_id", "account_id"),
     )
@@ -553,6 +557,10 @@ class Deal(Base):
         String(50), nullable=True, default=None
     )
     terms: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    brand_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("brands.id", ondelete="SET NULL"), nullable=True, index=True)
+    communication_state: Mapped[str] = mapped_column(String(30), default="no_channel", server_default="no_channel", nullable=False)
+    primary_thread_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("threads.id", ondelete="SET NULL"), nullable=True, index=True)
+    last_contact_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     instagram_account_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("user_instagram_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     instagram_deletion_archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     stage_before_instagram_deletion: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
@@ -582,8 +590,13 @@ class CreatorMessage(Base):
             "account_id",
             "created_at",
         ),
+        CheckConstraint(
+            "delivery_status IS NULL OR delivery_status IN ('pending', 'queued', 'sent', 'failed', 'cancelled')",
+            name="ck_creator_messages_delivery_status",
+        ),
         Index("ix_creator_messages_deal_id", "deal_id"),
         Index("ix_creator_messages_account_channel", "account_id", "channel_type"),
+        Index("ix_creator_messages_thread_created", "thread_id", "created_at", "id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -606,6 +619,12 @@ class CreatorMessage(Base):
     )
     sender_type: Mapped[str] = mapped_column(String(20), nullable=False)
     sender_instagram_account_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("user_instagram_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    thread_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("threads.id", ondelete="SET NULL"), nullable=True, index=True)
+    sender_account_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("sender_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    provider_queue_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    delivery_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     channel_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     channel_target: Mapped[str | None] = mapped_column(String(255), nullable=True)
     external_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -1167,3 +1186,162 @@ class UserInstagramAccount(Base):
 
     user: Mapped["User"] = relationship()
     brand: Mapped["Brand | None"] = relationship()
+
+
+class SenderAccount(Base):
+    __tablename__ = "sender_accounts"
+    __table_args__ = (
+        CheckConstraint("country IS NULL OR country ~ '^[a-z]{2}$'", name="ck_sender_accounts_country"),
+        CheckConstraint("platform <> ''", name="ck_sender_accounts_platform"),
+        CheckConstraint("provider <> ''", name="ck_sender_accounts_provider"),
+        Index("ix_sender_accounts_user_brand", "user_id", "brand_id"),
+        Index("ix_sender_accounts_poll", "next_poll_at", "deleted_at"),
+        Index("ix_sender_accounts_lease", "lease_expires_at"),
+        Index(
+            "ix_sender_accounts_rotation",
+            "user_id",
+            "platform",
+            "deleted_at",
+            "rotation_enabled",
+            "last_assigned_at",
+        ),
+        Index(
+            "uq_sender_accounts_active_platform_login",
+            "platform",
+            "normalized_login",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    brand_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("brands.id", ondelete="SET NULL"), nullable=True, index=True)
+    legacy_account_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("user_instagram_accounts.id", ondelete="SET NULL"), nullable=True, unique=True)
+    platform: Mapped[str] = mapped_column(String(30), default="instagram", server_default="instagram", nullable=False)
+    provider: Mapped[str] = mapped_column(String(30), default="bridgit", server_default="bridgit", nullable=False)
+    login: Mapped[str] = mapped_column(String(254), nullable=False)
+    normalized_login: Mapped[str] = mapped_column(String(254), nullable=False)
+    country: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    password_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    password_nonce: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="in_queue", server_default="in_queue", nullable=False)
+    rotation_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    last_assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    billing: Mapped[str | None] = mapped_column(Text, nullable=True)
+    promo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    remote_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    confirmation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stuck_warning_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+
+    user: Mapped["User"] = relationship()
+    brand: Mapped["Brand | None"] = relationship()
+    legacy_account: Mapped["UserInstagramAccount | None"] = relationship()
+
+
+class ChannelIdentity(Base):
+    __tablename__ = "channel_identities"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'blocked', 'deleted', 'replaced', 'pending_verification')", name="ck_channel_identities_status"),
+        CheckConstraint("platform <> ''", name="ck_channel_identities_platform"),
+        Index("ix_channel_identities_author_status", "user_id", "author_account_id", "status"),
+        Index("ix_channel_identities_sender_status", "sender_account_id", "status"),
+        Index(
+            "uq_channel_identities_current_pair",
+            "user_id",
+            "sender_account_id",
+            "author_account_id",
+            "platform",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL AND status != 'replaced'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    sender_account_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("sender_accounts.id", ondelete="RESTRICT"), nullable=False, index=True)
+    author_account_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False, index=True)
+    replaced_by_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("channel_identities.id", ondelete="RESTRICT"), nullable=True)
+    platform: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="active", server_default="active", nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+
+    sender_account: Mapped["SenderAccount"] = relationship()
+    author_account: Mapped["Account"] = relationship()
+
+
+class Thread(Base):
+    __tablename__ = "threads"
+    __table_args__ = (
+        Index("ix_threads_user_author_deal", "user_id", "author_account_id", "deal_id"),
+        Index("ix_threads_deal_id", "deal_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    channel_identity_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("channel_identities.id", ondelete="RESTRICT"), nullable=False, unique=True)
+    author_account_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False, index=True)
+    deal_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("deals.id", ondelete="RESTRICT"), nullable=True)
+    is_read_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+
+    channel_identity: Mapped["ChannelIdentity"] = relationship()
+    author_account: Mapped["Account"] = relationship()
+
+
+class DealActivity(Base):
+    __tablename__ = "deal_activities"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('message', 'stage_changed', 'channel_blocked', 'channel_deleted', 'channel_replaced', 'communication_resumed')",
+            name="ck_deal_activities_event_type",
+        ),
+        Index("ix_deal_activities_deal_created", "deal_id", "created_at", "id"),
+        Index("ix_deal_activities_channel_created", "channel_identity_id", "created_at", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    deal_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("deals.id", ondelete="RESTRICT"), nullable=False, index=True)
+    thread_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("threads.id", ondelete="RESTRICT"), nullable=True)
+    channel_identity_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("channel_identities.id", ondelete="RESTRICT"), nullable=True)
+    message_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("creator_messages.id", ondelete="RESTRICT"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    from_stage: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    to_stage: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+
+
+class DealTask(Base):
+    __tablename__ = "deal_tasks"
+    __table_args__ = (
+        Index("ix_deal_tasks_deal_completed", "deal_id", "completed_at"),
+        Index(
+            "uq_deal_tasks_open_title",
+            "deal_id",
+            "title",
+            unique=True,
+            postgresql_where=text("completed_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    deal_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("deals.id", ondelete="RESTRICT"), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

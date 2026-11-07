@@ -124,6 +124,12 @@ export interface DealMessageItem {
   media_url?: string | null;
   media_name?: string | null;
   media_type?: string | null;
+  thread_id?: number | null;
+  sender_account_id?: number | null;
+  provider_queue_id?: string | null;
+  delivery_status?: 'pending' | 'queued' | 'sent' | 'failed' | 'cancelled' | null;
+  edited_at?: string | null;
+  deleted_at?: string | null;
 }
 
 export interface DealItem {
@@ -144,6 +150,12 @@ export interface DealItem {
   last_message: DealMessageItem | null;
   unread_count: number;
   erid?: string | null;
+  brand_id?: number | null;
+  communication_state?: 'active' | 'interrupted' | 'recontact_required' | 'resumed' | 'no_channel';
+  primary_thread_id?: number | null;
+  last_contact_at?: string | null;
+  instagram_account_id?: number | null;
+  instagram_deletion_archived_at?: string | null;
 }
 
 export interface DealCreatePayload {
@@ -192,6 +204,39 @@ export interface CommunicationChannelItem {
   instagram_login?: string | null;
   instagram_status?: string | null;
   instagram_deleted?: boolean;
+  communication_state?: 'active' | 'interrupted' | 'recontact_required' | 'resumed' | 'no_channel' | null;
+  primary_thread_id?: number | null;
+  channel_identity_id?: number | null;
+  can_send?: boolean;
+}
+
+export interface CommunicationAccountAvailability {
+  total_accounts: number;
+  working_accounts: number;
+  has_working_account: boolean;
+}
+
+export interface DealActivityItem {
+  id: number;
+  event_type: 'message' | 'stage_changed' | 'channel_blocked' | 'channel_deleted' | 'channel_replaced' | 'communication_resumed' | string;
+  description: string | null;
+  thread_id: number | null;
+  channel_identity_id: number | null;
+  message_id: number | null;
+  from_stage: number | null;
+  to_stage: number | null;
+  created_at: string;
+}
+
+export interface ChannelIdentityItem {
+  id: number;
+  sender_account_id: number;
+  sender_login: string;
+  platform: string;
+  status: 'active' | 'blocked' | 'deleted' | 'replaced' | 'pending_verification' | string;
+  replaced_by_id: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 const TOKEN_KEY = 'creatorflow_token';
@@ -485,6 +530,9 @@ export interface InstagramAccountItem {
   stuck: boolean;
   created_at: string;
   updated_at: string;
+  platform?: string;
+  provider?: string;
+  rotation_enabled?: boolean;
 }
 
 export interface InstagramAccountPayload {
@@ -707,6 +755,13 @@ export const api = {
     });
   },
 
+  async replaceDealChannel(dealId: number, senderAccountId?: number): Promise<DealItem> {
+    return request<DealItem>(`/deals/${dealId}/replace-channel`, {
+      method: 'POST',
+      body: JSON.stringify({ sender_account_id: senderAccountId ?? null }),
+    });
+  },
+
   async deleteDeal(dealId: number): Promise<{ status: string; deal_id: number }> {
     return request<{ status: string; deal_id: number }>(`/deals/${dealId}`, {
       method: 'DELETE',
@@ -715,6 +770,18 @@ export const api = {
 
   async getDealMessages(dealId: number): Promise<DealMessageItem[]> {
     return request<DealMessageItem[]>(`/deals/${dealId}/messages`);
+  },
+
+  async getDealTimeline(dealId: number, params?: { beforeId?: number; limit?: number }): Promise<DealActivityItem[]> {
+    const query = new URLSearchParams();
+    if (params?.beforeId !== undefined) query.set('before_id', String(params.beforeId));
+    if (params?.limit !== undefined) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request<DealActivityItem[]>(`/deals/${dealId}/timeline${suffix}`);
+  },
+
+  async getDealChannels(dealId: number): Promise<ChannelIdentityItem[]> {
+    return request<ChannelIdentityItem[]>(`/deals/${dealId}/channels`);
   },
 
   async sendDealMessage(dealId: number, text?: string | null, senderType: string = 'user', media?: { media_url: string; media_name: string; media_type: string }, preferredChannel?: string): Promise<DealMessageItem> {
@@ -733,6 +800,10 @@ export const api = {
 
   async getCommunications(): Promise<CommunicationChannelItem[]> {
     return request<CommunicationChannelItem[]>('/communications');
+  },
+
+  async getCommunicationAccountAvailability(): Promise<CommunicationAccountAvailability> {
+    return request<CommunicationAccountAvailability>('/communications/account-availability');
   },
 
   async initCommunication(creatorId: string, channelType?: string): Promise<CommunicationChannelItem> {
@@ -820,24 +891,28 @@ export const api = {
     });
   },
 
-  async getInstagramAccounts(): Promise<InstagramAccountItem[]> {
-    return request<InstagramAccountItem[]>('/instagram-accounts');
+  async getInstagramAccounts(brandId?: number): Promise<InstagramAccountItem[]> {
+    return request<InstagramAccountItem[]>(brandId ? `/brands/${brandId}/accounts` : '/instagram-accounts');
   },
 
-  async addInstagramAccount(payload: InstagramAccountPayload): Promise<InstagramAccountItem> {
-    return request<InstagramAccountItem>('/instagram-accounts', { method: 'POST', body: JSON.stringify(payload) });
+  async addInstagramAccount(payload: InstagramAccountPayload, brandId?: number): Promise<InstagramAccountItem> {
+    const path = brandId ? `/brands/${brandId}/accounts` : '/instagram-accounts';
+    return request<InstagramAccountItem>(path, { method: 'POST', body: JSON.stringify(payload) });
   },
 
-  async confirmInstagramAccount(accountId: number, payload: { password?: string; two_factor?: string }): Promise<InstagramAccountItem> {
-    return request<InstagramAccountItem>(`/instagram-accounts/${accountId}/confirm`, { method: 'POST', body: JSON.stringify(payload) });
+  async confirmInstagramAccount(accountId: number, payload: { password?: string; two_factor?: string }, brandId?: number): Promise<InstagramAccountItem> {
+    const path = brandId ? `/brands/${brandId}/accounts/${accountId}/confirm` : `/instagram-accounts/${accountId}/confirm`;
+    return request<InstagramAccountItem>(path, { method: 'POST', body: JSON.stringify(payload) });
   },
 
-  async resumeInstagramAccount(accountId: number): Promise<InstagramAccountItem> {
-    return request<InstagramAccountItem>(`/instagram-accounts/${accountId}/resume`, { method: 'POST', body: '{}' });
+  async resumeInstagramAccount(accountId: number, brandId?: number): Promise<InstagramAccountItem> {
+    const path = brandId ? `/brands/${brandId}/accounts/${accountId}/resume` : `/instagram-accounts/${accountId}/resume`;
+    return request<InstagramAccountItem>(path, { method: 'POST', body: '{}' });
   },
 
-  async deleteInstagramAccount(accountId: number): Promise<InstagramAccountDeleteResult> {
-    return request<InstagramAccountDeleteResult>(`/instagram-accounts/${accountId}`, { method: 'DELETE' });
+  async deleteInstagramAccount(accountId: number, brandId?: number): Promise<InstagramAccountDeleteResult> {
+    const path = brandId ? `/brands/${brandId}/accounts/${accountId}` : `/instagram-accounts/${accountId}`;
+    return request<InstagramAccountDeleteResult>(path, { method: 'DELETE' });
   },
 
   getCurrentUser(): Record<string, unknown> | null {

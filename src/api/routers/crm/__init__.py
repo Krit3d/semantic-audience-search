@@ -12,6 +12,7 @@ from src.api.routers.crm import (
     instagram_accounts,
     media,
     oauth,
+    sender_accounts,
     webhooks,
 )
 
@@ -22,6 +23,7 @@ router.include_router(auth.router)
 router.include_router(oauth.router)
 router.include_router(webhooks.router)
 router.include_router(instagram_accounts.router)
+router.include_router(sender_accounts.router)
 router.include_router(media.router, dependencies=_subscription)
 router.include_router(creators.router, dependencies=_subscription)
 router.include_router(deals.router, dependencies=_subscription)

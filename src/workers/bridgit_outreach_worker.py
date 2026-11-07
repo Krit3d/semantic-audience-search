@@ -10,9 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from src.api.services.bridgit_client import BridgitAPIError, BridgitClient
+from src.api.services.communication_domain import CommunicationServiceError, ensure_active_thread
 from src.config.config import Settings, load_settings
 from src.db.database import Database
-from src.db.models import Account, CreatorMessage, UserInstagramAccount
+from src.db.models import Account, CreatorMessage, Deal
 
 logger = logging.getLogger(__name__)
 
@@ -156,9 +157,12 @@ class BridgitOutreachWorker:
                             "text": message.text,
                             "media_url": message.media_url,
                             "account_id": message.account_id,
+                            "deal_id": message.deal_id,
+                            "thread_id": message.thread_id,
                             "channel_target": message.channel_target,
                             "user_id": message.user_id,
                             "sender_instagram_account_id": message.sender_instagram_account_id,
+                            "sender_account_id": message.sender_account_id,
                         }
                     )
                     message.external_message_id = SENDING_MARKER
@@ -189,19 +193,45 @@ class BridgitOutreachWorker:
             ).rstrip("/")
             media_url = f"{base_url}{media_url}"
 
-        sender_login = None
-        if task.get("sender_instagram_account_id"):
-            async with self._session_factory() as session:
-                sender = await session.get(UserInstagramAccount, task["sender_instagram_account_id"])
-                if sender is None or sender.deleted_at is not None or sender.status != "ok":
-                    async with session.begin():
-                        await session.execute(
-                            update(CreatorMessage)
-                            .where(CreatorMessage.id == task["id"])
-                            .values(external_message_id="FAILED:instagram_sender_unavailable")
-                        )
+        async with self._session_factory() as session:
+            async with session.begin():
+                account = await session.get(Account, task["account_id"])
+                deal = await session.get(Deal, task["deal_id"]) if task.get("deal_id") else None
+                if account is None:
+                    await session.execute(
+                        update(CreatorMessage)
+                        .where(CreatorMessage.id == task["id"])
+                        .values(external_message_id=NO_RECIPIENT_MARKER, delivery_status="failed"),
+                    )
+                    return
+                try:
+                    channel, thread, sender = await ensure_active_thread(
+                        session,
+                        user_id=task["user_id"],
+                        author_account=account,
+                        deal=deal,
+                        platform="instagram",
+                    )
+                except CommunicationServiceError:
+                    await session.execute(
+                        update(CreatorMessage)
+                        .where(CreatorMessage.id == task["id"])
+                        .values(
+                            external_message_id="FAILED:instagram_sender_unavailable",
+                            delivery_status="failed",
+                        ),
+                    )
                     return
                 sender_login = sender.normalized_login
+                await session.execute(
+                    update(CreatorMessage)
+                    .where(CreatorMessage.id == task["id"])
+                    .values(
+                        thread_id=thread.id,
+                        sender_account_id=sender.id,
+                        sender_instagram_account_id=sender.legacy_account_id,
+                    ),
+                )
 
         try:
             await self._client.send_direct_message(
@@ -226,7 +256,10 @@ class BridgitOutreachWorker:
                 await session.execute(
                     update(CreatorMessage)
                     .where(CreatorMessage.id == task["id"])
-                    .values(external_message_id=external_id)
+                    .values(
+                        external_message_id=external_id,
+                        delivery_status="queued" if external_id.startswith(QUEUED_PREFIX) else "failed",
+                    )
                 )
 
     async def _stats_loop(self) -> None:
@@ -293,6 +326,7 @@ class BridgitOutreachWorker:
                         message.external_message_id = (
                             f"{FAILED_PREFIX}{self._log_status(error_event['entry'])}"
                         )
+                        message.delivery_status = "failed"
                         continue
                     success_event = self._match_event(
                         success_index.get(username), min_actiontime
@@ -301,6 +335,7 @@ class BridgitOutreachWorker:
                         message.external_message_id = (
                             f"{SENT_PREFIX}{success_event['actiontime']}"
                         )
+                        message.delivery_status = "sent"
 
     def _message_username(self, message: CreatorMessage) -> str | None:
         channel_target = (message.channel_target or "").replace("@", "").strip().lower()

@@ -9,11 +9,11 @@ from src.api.instagram_schemas import (
     InstagramAccountResponse,
 )
 from src.api.services.bridgit_client import BridgitAPIError, BridgitClient
-from src.api.services.instagram_dialogs import archive_instagram_dialogs
+from src.api.services.communication_domain import ensure_sender_account, handle_sender_unavailable
 from src.api.services.instagram_password_cipher import InstagramPasswordCipher
 from src.config.config import Settings
 from src.db.database import Database
-from src.db.models import Brand, User, UserInstagramAccount
+from src.db.models import Brand, SenderAccount, User, UserInstagramAccount
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +127,23 @@ class InstagramAccountService:
                     existing = await self._account_by_login(session, user_id, normalized_login)
                     if existing is not None and existing.deleted_at is None:
                         raise InstagramAccountServiceError(409, "already1", "Этот профиль уже добавлен вами", "login")
+                    other_legacy = await session.scalar(
+                        select(UserInstagramAccount.id).where(
+                            UserInstagramAccount.normalized_login == normalized_login,
+                            UserInstagramAccount.deleted_at.is_(None),
+                            UserInstagramAccount.user_id != user_id,
+                        ),
+                    )
+                    other_sender = await session.scalar(
+                        select(SenderAccount.id).where(
+                            SenderAccount.platform == "instagram",
+                            SenderAccount.normalized_login == normalized_login,
+                            SenderAccount.deleted_at.is_(None),
+                            SenderAccount.user_id != user_id,
+                        ),
+                    )
+                    if other_legacy is not None or other_sender is not None:
+                        raise InstagramAccountServiceError(409, "already2", "Этот профиль уже закреплён за другим пользователем", "login")
                     if brand_id is not None:
                         brand = await session.get(Brand, brand_id)
                         if brand is None or brand.user_id != user_id:
@@ -154,6 +171,7 @@ class InstagramAccountService:
                     account.lease_expires_at = None
                     session.add(account)
                     await session.flush()
+                    await ensure_sender_account(session, account)
                     await session.refresh(account)
                     response = self._response(account)
             logger.info("Instagram account queued user_id=%s account_id=%s", user_id, response.id)
@@ -204,6 +222,7 @@ class InstagramAccountService:
                     account.lease_owner = None
                     account.lease_expires_at = None
                     await session.flush()
+                    await ensure_sender_account(session, account)
                     await session.refresh(account)
                     response = self._response(account)
             logger.info("Instagram account update queued user_id=%s account_id=%s", user_id, account_id)
@@ -226,7 +245,7 @@ class InstagramAccountService:
                     async with self._client() as client:
                         await client.remove_account(account.normalized_login)
                     now = datetime.now(timezone.utc)
-                    await archive_instagram_dialogs(session, account, account.normalized_login)
+                    sender = await ensure_sender_account(session, account)
                     account.status = "deleted"
                     account.deleted_at = now
                     account.password_ciphertext = None
@@ -234,6 +253,14 @@ class InstagramAccountService:
                     account.next_poll_at = None
                     account.lease_owner = None
                     account.lease_expires_at = None
+                    sender.status = "deleted"
+                    sender.deleted_at = now
+                    sender.password_ciphertext = None
+                    sender.password_nonce = None
+                    sender.next_poll_at = None
+                    sender.lease_owner = None
+                    sender.lease_expires_at = None
+                    await handle_sender_unavailable(session, sender, "deleted")
                     return InstagramAccountDeleteResponse(
                         status="deleted",
                         id=account.id,

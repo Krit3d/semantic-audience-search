@@ -4,6 +4,7 @@ import ipaddress
 import secrets
 import socket
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -13,10 +14,18 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import func, or_, select, update
 
 from src.api.dependencies import get_db
+from src.api.services.communication_domain import (
+    CommunicationServiceError,
+    add_activity,
+    ensure_active_thread,
+    ensure_legacy_thread,
+    has_working_sender,
+    lock_user,
+)
 from src.api.services.crm_helpers import detect_media_type
 from src.config.config import MEDIA_DIR, Settings
 from src.db.database import Database
-from src.db.models import Account, CreatorMessage, Deal, User
+from src.db.models import Account, ChannelIdentity, CreatorMessage, Deal, SenderAccount, User
 from src.utils.url_security import is_allowed_destination
 
 logger = logging.getLogger(__name__)
@@ -157,13 +166,13 @@ async def process_inbound_event(
                 await session.execute(
                     update(CreatorMessage)
                     .where(CreatorMessage.external_message_id == ext_id_str)
-                    .values(external_message_id=f"FAILED:{ext_id_str}")
+                    .values(external_message_id=f"FAILED:{ext_id_str}", delivery_status="failed")
                 )
             else:
                 await session.execute(
                     update(CreatorMessage)
                     .where(CreatorMessage.external_message_id == ext_id_str)
-                    .values(is_read=True)
+                    .values(is_read=True, delivery_status="sent")
                 )
             await session.commit()
         return
@@ -262,38 +271,85 @@ async def process_inbound_event(
             user_id = (await session.execute(user_stmt)).scalar_one_or_none()
         if user_id is None:
             return
+        await lock_user(session, user_id)
         duplicate_stmt = (
             select(CreatorMessage.id)
-            .where(CreatorMessage.external_message_id == str(external_message_id))
+            .where(
+                CreatorMessage.user_id == user_id,
+                CreatorMessage.channel_type == "instagram",
+                CreatorMessage.external_message_id == str(external_message_id),
+            )
             .limit(1)
         )
         if (await session.execute(duplicate_stmt)).scalar_one_or_none() is not None:
             return
-        deal_stmt = (
-            select(Deal.id)
+        deal = await session.scalar(
+            select(Deal)
             .where(
                 Deal.account_id == account.id,
                 Deal.user_id == user_id,
                 Deal.stage.in_([1, 2, 3, 4, 5, 6]),
             )
             .order_by(Deal.updated_at.desc())
-            .limit(1)
+            .limit(1),
         )
-        deal_id = (await session.execute(deal_stmt)).scalar_one_or_none()
-        message_kwargs: dict[str, Any] = dict(
+        thread = await ensure_legacy_thread(
+            session,
+            user_id=user_id,
+            author_account_id=account.id,
+            deal=deal,
+        )
+        channel = None
+        sender = None
+        if thread is not None:
+            channel = await session.get(ChannelIdentity, thread.channel_identity_id)
+            sender = await session.get(SenderAccount, channel.sender_account_id) if channel is not None else None
+        elif await has_working_sender(session, user_id, "instagram"):
+            try:
+                channel, thread, sender = await ensure_active_thread(
+                    session,
+                    user_id=user_id,
+                    author_account=account,
+                    deal=deal,
+                    platform="instagram",
+                )
+            except CommunicationServiceError:
+                channel = None
+                thread = None
+                sender = None
+        message = CreatorMessage(
             user_id=user_id,
             account_id=account.id,
-            deal_id=deal_id,
+            deal_id=deal.id if deal is not None else None,
             sender_type="creator",
             channel_type="instagram",
             channel_target=f"@{handle_clean}",
             external_message_id=str(external_message_id),
             text=reply_text,
             is_read=False,
+            thread_id=thread.id if thread is not None else None,
+            sender_account_id=sender.id if sender is not None else None,
+            sender_instagram_account_id=sender.legacy_account_id if sender is not None else None,
+            delivery_status="sent",
+            media_url=media_url,
+            media_name=media_name,
+            media_type=media_type,
         )
-        if media_url:
-            message_kwargs["media_url"] = media_url
-            message_kwargs["media_name"] = media_name
-            message_kwargs["media_type"] = media_type
-        session.add(CreatorMessage(**message_kwargs))
+        session.add(message)
+        await session.flush()
+        if deal is not None:
+            deal.last_contact_at = message.created_at
+            if deal.communication_state == "no_channel" and channel is not None and channel.status == "active":
+                deal.communication_state = "active"
+            deal.updated_at = datetime.now(timezone.utc)
+            await add_activity(
+                session,
+                event_key=f"message:{message.id}",
+                deal=deal,
+                event_type="message",
+                thread=thread,
+                channel=channel,
+                message=message,
+                created_at=message.created_at,
+            )
         await session.commit()

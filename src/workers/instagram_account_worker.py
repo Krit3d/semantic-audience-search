@@ -8,10 +8,14 @@ from typing import Any
 from sqlalchemy import or_, select
 
 from src.api.services.bridgit_client import BridgitAPIError, BridgitClient
-from src.api.services.instagram_dialogs import restore_instagram_dialogs
+from src.api.services.communication_domain import (
+    ensure_sender_account,
+    handle_sender_restored,
+    handle_sender_unavailable,
+)
 from src.config.config import Settings, load_settings
 from src.db.database import Database
-from src.db.models import UserInstagramAccount
+from src.db.models import SenderAccount, UserInstagramAccount
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +109,10 @@ class InstagramAccountWorker:
         for account_id, lease_owner in claims:
             await self._poll_claimed_account(account_id, lease_owner)
             processed += 1
+        sender_claims = await self._claim_due_sender_accounts(current_time)
+        for account_id, lease_owner in sender_claims:
+            await self._poll_claimed_sender_account(account_id, lease_owner)
+            processed += 1
         return processed
 
     async def _claim_due_accounts(self, now: datetime) -> list[tuple[int, str]]:
@@ -154,13 +162,16 @@ class InstagramAccountWorker:
                 if account is None or account.lease_owner != lease_owner or account.deleted_at is not None:
                     return
                 self.apply_status(account, result, now, self._settings)
+                sender = await ensure_sender_account(session, account)
                 if result == "ok":
-                    await restore_instagram_dialogs(session, account)
+                    await handle_sender_restored(session, sender)
+                elif result not in {"in_queue", "needcheck"}:
+                    await handle_sender_unavailable(session, sender, "blocked")
         logger.info("Instagram status updated account_id=%s result=%s", account_id, result)
 
     @staticmethod
     def apply_status(
-        account: UserInstagramAccount,
+        account: UserInstagramAccount | SenderAccount,
         result: str,
         now: datetime,
         settings: Settings,
@@ -205,6 +216,70 @@ class InstagramAccountWorker:
                 account.lease_expires_at = None
         logger.warning("Instagram poll failed account_id=%s status=%s", account_id, error.status_code)
 
+    async def _claim_due_sender_accounts(self, now: datetime) -> list[tuple[int, str]]:
+        async with self._db.async_session() as session:
+            async with session.begin():
+                stmt = (
+                    select(SenderAccount)
+                    .where(SenderAccount.legacy_account_id.is_(None))
+                    .where(SenderAccount.deleted_at.is_(None))
+                    .where(SenderAccount.status.in_(["in_queue", "needcheck"]))
+                    .where(SenderAccount.next_poll_at.is_not(None))
+                    .where(SenderAccount.next_poll_at <= now)
+                    .where(or_(
+                        SenderAccount.lease_expires_at.is_(None),
+                        SenderAccount.lease_expires_at <= now,
+                    ))
+                    .order_by(SenderAccount.next_poll_at.asc())
+                    .limit(self._batch_size)
+                    .with_for_update(skip_locked=True)
+                )
+                accounts = list((await session.execute(stmt)).scalars().all())
+                claims: list[tuple[int, str]] = []
+                for account in accounts:
+                    lease_owner = uuid.uuid4().hex
+                    account.lease_owner = lease_owner
+                    account.lease_expires_at = now + timedelta(seconds=self._settings.bridgit_account_worker_lease_s)
+                    claims.append((account.id, lease_owner))
+                return claims
+
+    async def _poll_claimed_sender_account(self, account_id: int, lease_owner: str) -> None:
+        async with self._db.async_session() as session:
+            account = await session.get(SenderAccount, account_id)
+            if account is None or account.lease_owner != lease_owner or account.deleted_at is not None:
+                return
+            login = account.normalized_login
+        try:
+            data = await self._client.get_account_status(login)
+            result = data.get("result")
+            if not isinstance(result, str) or result not in _KNOWN_STATUSES:
+                raise BridgitAPIError("Unknown Instagram account status")
+        except BridgitAPIError as error:
+            now = datetime.now(timezone.utc)
+            async with self._db.async_session() as session:
+                async with session.begin():
+                    account = await session.get(SenderAccount, account_id, with_for_update=True)
+                    if account is None or account.lease_owner != lease_owner or account.deleted_at is not None:
+                        return
+                    account.last_polled_at = now
+                    account.last_error_code = "timeout" if error.status_code == 504 else "poll_failed"
+                    account.next_poll_at = now + timedelta(seconds=self._settings.bridgit_account_poll_interval_s)
+                    account.lease_owner = None
+                    account.lease_expires_at = None
+            return
+        now = datetime.now(timezone.utc)
+        async with self._db.async_session() as session:
+            async with session.begin():
+                account = await session.get(SenderAccount, account_id, with_for_update=True)
+                if account is None or account.lease_owner != lease_owner or account.deleted_at is not None:
+                    return
+                self.apply_status(account, result, now, self._settings)
+                if result == "ok":
+                    await handle_sender_restored(session, account)
+                elif result not in {"in_queue", "needcheck"}:
+                    await handle_sender_unavailable(session, account, "blocked")
+        logger.info("Sender account status updated account_id=%s result=%s", account_id, result)
+
     async def sync_accounts(self) -> int:
         data = await self._client.get_accounts()
         remote_accounts = data.get("accounts")
@@ -234,11 +309,44 @@ class InstagramAccountWorker:
                     account = matches[0]
                     remote = remote_by_login[normalized]
                     self.apply_sync(account, remote, now)
+                    sender = await ensure_sender_account(session, account)
+                    if account.status == "ok":
+                        await handle_sender_restored(session, sender)
+                    elif account.status not in {"in_queue", "needcheck"}:
+                        await handle_sender_unavailable(session, sender, "blocked")
+                    synced += 1
+        synced += await self.sync_sender_accounts(remote_by_login, now)
+        return synced
+
+    async def sync_sender_accounts(self, remote_by_login: dict[str, dict[str, Any]], now: datetime) -> int:
+        synced = 0
+        async with self._db.async_session() as session:
+            async with session.begin():
+                accounts = list((await session.execute(
+                    select(SenderAccount).where(
+                        SenderAccount.legacy_account_id.is_(None),
+                        SenderAccount.deleted_at.is_(None),
+                    ),
+                )).scalars().all())
+                candidates: dict[str, list[SenderAccount]] = {}
+                for account in accounts:
+                    if account.normalized_login in remote_by_login:
+                        candidates.setdefault(account.normalized_login, []).append(account)
+                for normalized, matches in candidates.items():
+                    if len(matches) != 1:
+                        logger.warning("Sender account sync skipped ambiguous login")
+                        continue
+                    account = matches[0]
+                    self.apply_sync(account, remote_by_login[normalized], now)
+                    if account.status == "ok":
+                        await handle_sender_restored(session, account)
+                    elif account.status not in {"in_queue", "needcheck"}:
+                        await handle_sender_unavailable(session, account, "blocked")
                     synced += 1
         return synced
 
     @staticmethod
-    def apply_sync(account: UserInstagramAccount, remote: dict[str, Any], now: datetime) -> None:
+    def apply_sync(account: UserInstagramAccount | SenderAccount, remote: dict[str, Any], now: datetime) -> None:
         billing = remote.get("billing")
         promo = remote.get("promo")
         remote_status = remote.get("status")

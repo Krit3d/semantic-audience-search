@@ -14,7 +14,6 @@ import { userName, api,
 } from '../../services/api';
 import { planTitle } from '../pricing/planMeta';
 import type { Social } from '../../data';
-import InstagramAccounts from './InstagramAccounts';
 
 type Section = 'brands' | 'authors' | 'erid';
 
@@ -236,8 +235,6 @@ export default function SettingsScreen({ user, onOpenBrand, onUserUpdated }: {
               .finally(() => setSavingInstagram(false));
           }}>{savingInstagram ? 'Сохраняем…' : 'Сохранить'}</Btn>
         </section>
-
-        <InstagramAccounts />
 
         <SubscriptionCard />
 

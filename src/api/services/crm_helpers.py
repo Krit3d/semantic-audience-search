@@ -118,6 +118,12 @@ def message_item(message: CreatorMessage) -> CreatorMessageItem:
         media_url=message.media_url,
         media_name=message.media_name,
         media_type=message.media_type,
+        thread_id=message.thread_id,
+        sender_account_id=message.sender_account_id,
+        provider_queue_id=message.provider_queue_id,
+        delivery_status=message.delivery_status,
+        edited_at=message.edited_at,
+        deleted_at=message.deleted_at,
     )
 
 

@@ -9,10 +9,14 @@ from sqlalchemy.orm import joinedload
 
 from src.api.dependencies import get_crm_client, get_current_user, get_db
 from src.api.schemas import (
+    ChannelIdentityItem,
+    ChannelReplaceRequest,
     CreatorMessageItem,
     CreatorSendMessageRequest,
+    DealActivityItem,
     DealCreateRequest,
     DealItem,
+    DealTaskItem,
     DealUpdateRequest,
 )
 from src.api.services.contact_resolver import ContactResolver
@@ -23,10 +27,33 @@ from src.api.services.crm_helpers import (
     resolve_account,
     resolve_target_for_channel,
 )
+from src.api.services.communication_domain import (
+    CommunicationServiceError,
+    create_channel,
+    ensure_active_thread,
+    ensure_legacy_thread,
+    get_current_channel,
+    lock_user,
+    record_outgoing_message,
+    record_stage_change,
+    replace_channel,
+    select_available_sender,
+)
 from src.api.services.dialog_quota import ensure_dialog_can_be_created
-from src.api.services.instagram_dialogs import resolve_instagram_sender
 from src.db.database import Database
-from src.db.models import Account, CreatorMessage, Deal, EridRecord, User, UserInstagramAccount, UserShortlist
+from src.db.models import (
+    Account,
+    Brand,
+    ChannelIdentity,
+    CreatorMessage,
+    Deal,
+    DealActivity,
+    DealTask,
+    EridRecord,
+    SenderAccount,
+    User,
+    UserShortlist,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +87,10 @@ def _deal_item(
         last_message=last_message,
         unread_count=unread_count,
         erid=erid,
+        brand_id=deal.brand_id,
+        communication_state=deal.communication_state,
+        primary_thread_id=deal.primary_thread_id,
+        last_contact_at=deal.last_contact_at,
         instagram_account_id=deal.instagram_account_id,
         instagram_deletion_archived_at=deal.instagram_deletion_archived_at,
     )
@@ -195,7 +226,11 @@ async def create_deal(
         account = await resolve_account(session, crm_client, str(payload.account_id).strip())
         if account is None:
             raise HTTPException(status_code=404, detail="Автор не найден")
-        sender = await resolve_instagram_sender(session, current_user.id, payload.brand_name)
+        brand = None
+        if payload.brand_name:
+            brand = await session.scalar(
+                select(Brand).where(Brand.user_id == current_user.id, Brand.name == payload.brand_name),
+            )
         deal = Deal(
             user_id=current_user.id,
             account_id=account.id,
@@ -204,24 +239,21 @@ async def create_deal(
             budget=payload.budget,
             type=payload.type,
             brand_name=payload.brand_name,
+            brand_id=brand.id if brand is not None else None,
             pub_date=payload.pub_date,
             terms=payload.terms,
-            instagram_account_id=sender.id if sender else None,
         )
         session.add(deal)
         await session.flush()
         if payload.initial_message:
             resolution = ContactResolver.resolve(account.raw_metadata, account.username)
             channel_type = resolution.channel_type or (account.platform.lower() if account.platform else "instagram")
-            if channel_type == "instagram" and (sender is None or sender.status != "ok"):
-                raise HTTPException(status_code=409, detail="Подключите и подтвердите Instagram-аккаунт бренда")
             await ensure_dialog_can_be_created(session, current_user.id, account.id, channel_type)
             msg = CreatorMessage(
                 user_id=current_user.id,
                 account_id=account.id,
                 deal_id=deal.id,
                 sender_type="user",
-                sender_instagram_account_id=sender.id if channel_type == "instagram" and sender else None,
                 text=payload.initial_message.strip(),
                 channel_type=channel_type,
                 channel_target=resolution.channel_target,
@@ -229,6 +261,30 @@ async def create_deal(
             )
             session.add(msg)
             await session.flush()
+            if channel_type == "instagram":
+                try:
+                    channel, thread, sender = await ensure_active_thread(
+                        session,
+                        user_id=current_user.id,
+                        author_account=account,
+                        deal=deal,
+                        platform="instagram",
+                    )
+                except CommunicationServiceError as error:
+                    raise HTTPException(
+                        status_code=error.status_code,
+                        detail={"code": error.code, "message": error.message},
+                    ) from None
+                deal.instagram_account_id = sender.legacy_account_id
+                msg.sender_instagram_account_id = sender.legacy_account_id
+                await record_outgoing_message(
+                    session,
+                    message=msg,
+                    channel=channel,
+                    thread=thread,
+                    sender=sender,
+                    deal=deal,
+                )
             last_message_item = message_item(msg)
         else:
             last_message_item = None
@@ -267,9 +323,9 @@ async def repeat_deal(
             budget=0,
             type=source.type,
             brand_name=source.brand_name,
+            brand_id=source.brand_id,
             pub_date=None,
             terms=None,
-            instagram_account_id=source.instagram_account_id,
         )
         session.add(repeated)
         await session.commit()
@@ -327,13 +383,20 @@ async def update_deal(
         if deal is None:
             raise HTTPException(status_code=404, detail="Сделка не найдена")
         account = deal.account
+        from_stage = deal.stage
         updates = payload.model_dump(exclude_unset=True)
         for field, value in updates.items():
             if field in FORBIDDEN_DEAL_FIELDS:
                 continue
             if value is not None:
                 setattr(deal, field, value)
+        if "brand_name" in updates:
+            brand = await session.scalar(
+                select(Brand).where(Brand.user_id == current_user.id, Brand.name == deal.brand_name),
+            )
+            deal.brand_id = brand.id if brand is not None else None
         deal.updated_at = datetime.now(timezone.utc)
+        await record_stage_change(session, deal, from_stage, deal.stage)
         await session.commit()
         await session.refresh(deal)
         unread_stmt = (
@@ -360,6 +423,158 @@ async def update_deal(
             erid=await _deal_erid_code(session, deal.id),
         )
     return item
+
+
+@router.post("/{deal_id}/replace-channel", response_model=DealItem)
+async def replace_deal_channel(
+    deal_id: int,
+    payload: ChannelReplaceRequest,
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> DealItem:
+    async with db.async_session() as session:
+        deal = await session.scalar(
+            select(Deal)
+            .options(joinedload(Deal.account))
+            .where(Deal.id == deal_id, Deal.user_id == current_user.id),
+        )
+        if deal is None:
+            raise HTTPException(status_code=404, detail="Сделка не найдена")
+        await lock_user(session, current_user.id)
+        current = await get_current_channel(session, current_user.id, deal.account_id, "instagram")
+        excluded = frozenset({current.sender_account_id}) if current is not None else frozenset()
+        if payload.sender_account_id is not None:
+            sender = await session.get(SenderAccount, payload.sender_account_id)
+            if (
+                sender is None
+                or sender.user_id != current_user.id
+                or sender.platform != "instagram"
+                or sender.status != "ok"
+                or sender.deleted_at is not None
+            ):
+                raise HTTPException(status_code=409, detail="Выбранный аккаунт недоступен")
+            sender.last_assigned_at = datetime.now(timezone.utc)
+        else:
+            sender = await select_available_sender(session, current_user.id, "instagram", excluded)
+        if sender is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "instagram_account_required", "message": "Нет рабочего аккаунта для замены канала"},
+            )
+        if current is not None and current.sender_account_id == sender.id and current.status == "active":
+            return _deal_item(deal, account=deal.account)
+        if current is not None:
+            await replace_channel(session, old_channel=current, new_sender=sender, deal=deal)
+        else:
+            await create_channel(
+                session,
+                user_id=current_user.id,
+                author_account_id=deal.account_id,
+                sender=sender,
+                deal=deal,
+            )
+        deal.instagram_account_id = sender.legacy_account_id
+        await session.commit()
+        await session.refresh(deal)
+        return _deal_item(deal, account=deal.account)
+
+
+@router.get("/{deal_id}/timeline", response_model=list[DealActivityItem])
+async def get_deal_timeline(
+    deal_id: int,
+    before_id: int | None = None,
+    limit: int = 100,
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> list[DealActivityItem]:
+    async with db.async_session() as session:
+        deal = await session.scalar(select(Deal.id).where(Deal.id == deal_id, Deal.user_id == current_user.id))
+        if deal is None:
+            raise HTTPException(status_code=404, detail="Сделка не найдена")
+        stmt = select(DealActivity).where(DealActivity.deal_id == deal_id)
+        if before_id is not None:
+            stmt = stmt.where(DealActivity.id < before_id)
+        activities = list((await session.execute(
+            stmt.order_by(DealActivity.id.desc()).limit(max(1, min(limit, 200))),
+        )).scalars().all())
+        return [
+            DealActivityItem(
+                id=item.id,
+                event_type=item.event_type,
+                description=item.description,
+                thread_id=item.thread_id,
+                channel_identity_id=item.channel_identity_id,
+                message_id=item.message_id,
+                from_stage=item.from_stage,
+                to_stage=item.to_stage,
+                created_at=item.created_at,
+            )
+            for item in activities
+        ]
+
+
+@router.get("/{deal_id}/channels", response_model=list[ChannelIdentityItem])
+async def get_deal_channels(
+    deal_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> list[ChannelIdentityItem]:
+    async with db.async_session() as session:
+        deal = await session.scalar(
+            select(Deal).where(Deal.id == deal_id, Deal.user_id == current_user.id),
+        )
+        if deal is None:
+            raise HTTPException(status_code=404, detail="Сделка не найдена")
+        rows = (await session.execute(
+            select(ChannelIdentity, SenderAccount.normalized_login)
+            .join(SenderAccount, SenderAccount.id == ChannelIdentity.sender_account_id)
+            .where(
+                ChannelIdentity.user_id == current_user.id,
+                ChannelIdentity.author_account_id == deal.account_id,
+            )
+            .order_by(ChannelIdentity.id.desc())
+            .limit(200),
+        )).all()
+        return [
+            ChannelIdentityItem(
+                id=channel.id,
+                sender_account_id=channel.sender_account_id,
+                sender_login=login,
+                platform=channel.platform,
+                status=channel.status,
+                replaced_by_id=channel.replaced_by_id,
+                created_at=channel.created_at,
+                updated_at=channel.updated_at,
+            )
+            for channel, login in rows
+        ]
+
+
+@router.get("/{deal_id}/tasks", response_model=list[DealTaskItem])
+async def get_deal_tasks(
+    deal_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> list[DealTaskItem]:
+    async with db.async_session() as session:
+        deal = await session.scalar(select(Deal.id).where(Deal.id == deal_id, Deal.user_id == current_user.id))
+        if deal is None:
+            raise HTTPException(status_code=404, detail="Сделка не найдена")
+        tasks = list((await session.execute(
+            select(DealTask)
+            .where(DealTask.deal_id == deal_id)
+            .order_by(DealTask.completed_at.is_(None).desc(), DealTask.id.desc())
+            .limit(200),
+        )).scalars().all())
+        return [
+            DealTaskItem(
+                id=item.id,
+                title=item.title,
+                created_at=item.created_at,
+                completed_at=item.completed_at,
+            )
+            for item in tasks
+        ]
 
 
 @router.delete("/{deal_id}")
@@ -412,6 +627,12 @@ async def get_deal_messages(
         deal = deal_result.scalar_one_or_none()
         if deal is None:
             raise HTTPException(status_code=404, detail="Сделка не найдена")
+        await ensure_legacy_thread(
+            session,
+            user_id=current_user.id,
+            author_account_id=deal.account_id,
+            deal=deal,
+        )
         update_stmt = (
             update(CreatorMessage)
             .where(
@@ -460,18 +681,13 @@ async def send_deal_message(
         else:
             target_channel = resolution.channel_type or (account.platform.lower() if account.platform else "instagram")
             target_handle = resolution.channel_target
-        sender = None
-        if target_channel == "instagram":
-            sender = await session.get(UserInstagramAccount, deal.instagram_account_id) if deal.instagram_account_id else None
-            if sender is None or sender.user_id != current_user.id or sender.deleted_at is not None or sender.status != "ok":
-                raise HTTPException(status_code=409, detail="Instagram-аккаунт сделки недоступен или удалён")
+        target_channel = target_channel.lower()
         await ensure_dialog_can_be_created(session, current_user.id, account.id, target_channel)
         message = CreatorMessage(
             user_id=deal.user_id,
             account_id=deal.account_id,
             deal_id=deal.id,
             sender_type="user",
-            sender_instagram_account_id=sender.id if sender else None,
             text=payload.text.strip() if payload.text else None,
             channel_type=target_channel,
             channel_target=target_handle,
@@ -481,7 +697,33 @@ async def send_deal_message(
             media_type=payload.media_type,
         )
         session.add(message)
-        deal.updated_at = datetime.now(timezone.utc)
+        await session.flush()
+        if target_channel == "instagram":
+            try:
+                channel, thread, sender = await ensure_active_thread(
+                    session,
+                    user_id=current_user.id,
+                    author_account=account,
+                    deal=deal,
+                    platform="instagram",
+                )
+            except CommunicationServiceError as error:
+                raise HTTPException(
+                    status_code=error.status_code,
+                    detail={"code": error.code, "message": error.message},
+                ) from None
+            deal.instagram_account_id = sender.legacy_account_id
+            message.sender_instagram_account_id = sender.legacy_account_id
+            await record_outgoing_message(
+                session,
+                message=message,
+                channel=channel,
+                thread=thread,
+                sender=sender,
+                deal=deal,
+            )
+        else:
+            deal.updated_at = datetime.now(timezone.utc)
         await session.commit()
         await session.refresh(message)
         return message_item(message)

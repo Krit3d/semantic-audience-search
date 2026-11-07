@@ -62,6 +62,12 @@ class InstagramAccountResponse(BaseModel):
     updated_at: datetime
 
 
+class SenderAccountResponse(InstagramAccountResponse):
+    platform: str
+    provider: str
+    rotation_enabled: bool
+
+
 class InstagramAccountDeleteResponse(BaseModel):
     status: str
     id: int

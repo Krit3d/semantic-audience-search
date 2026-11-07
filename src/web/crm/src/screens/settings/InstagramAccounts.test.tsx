@@ -72,11 +72,12 @@ describe('InstagramAccounts', () => {
     mockedApi.addInstagramAccount.mockResolvedValue(account({ status: 'in_queue' }));
     const user = userEvent.setup();
     render(<InstagramAccounts />);
-    await user.click(await screen.findByRole('button', { name: 'Добавить Instagram' }));
+    await user.click(await screen.findByRole('button', { name: 'Добавить аккаунт' }));
     await user.type(screen.getByLabelText('Логин'), 'creator');
     await user.type(screen.getByLabelText('Пароль'), 'private-password');
+    expect(screen.queryByLabelText(/2FA/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Добавить' }));
-    await waitFor(() => expect(mockedApi.addInstagramAccount).toHaveBeenCalledWith({ login: 'creator', password: 'private-password' }));
+    await waitFor(() => expect(mockedApi.addInstagramAccount).toHaveBeenCalledWith({ login: 'creator', password: 'private-password', country: 'us' }));
     expect(screen.queryByDisplayValue('private-password')).not.toBeInTheDocument();
     expect(await screen.findByText('Проверка...')).toBeInTheDocument();
   });
@@ -86,7 +87,7 @@ describe('InstagramAccounts', () => {
     mockedApi.addInstagramAccount.mockReturnValue(new Promise(resolve => { resolveRequest = resolve; }));
     const user = userEvent.setup();
     render(<InstagramAccounts />);
-    await user.click(await screen.findByRole('button', { name: 'Добавить Instagram' }));
+    await user.click(await screen.findByRole('button', { name: 'Добавить аккаунт' }));
     await user.type(screen.getByLabelText('Логин'), 'creator');
     await user.type(screen.getByLabelText('Пароль'), 'private-password');
     const submit = screen.getByRole('button', { name: 'Добавить' });
@@ -114,7 +115,7 @@ describe('InstagramAccounts', () => {
     render(<InstagramAccounts />);
     await user.click(await screen.findByRole('button', { name: 'Удалить @creator' }));
     expect(screen.getByText('Это последний аккаунт. После удаления у вас не останется Instagram-аккаунтов для новых диалогов.')).toBeInTheDocument();
-    expect(screen.getByText(/Сделки, диалоги, история сообщений/)).toBeInTheDocument();
+    expect(screen.getByText(/Сделки, их этапы, диалоги и история сообщений/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Удалить аккаунт' }));
     await waitFor(() => expect(mockedApi.deleteInstagramAccount).toHaveBeenCalledWith(7));
     expect(await screen.findByText('Instagram-аккаунтов пока нет')).toBeInTheDocument();

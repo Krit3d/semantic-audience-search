@@ -6,17 +6,68 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.api.dependencies import get_crm_client, get_current_user, get_db
-from src.api.schemas import AvailableChannelItem, CommunicationChannelItem, CommunicationInitRequest
+from src.api.schemas import (
+    AvailableChannelItem,
+    CommunicationAccountAvailability,
+    CommunicationChannelItem,
+    CommunicationInitRequest,
+)
+from src.api.services.communication_domain import (
+    CommunicationServiceError,
+    ensure_active_thread,
+    has_working_sender,
+    sync_legacy_pool,
+)
 from src.api.services.contact_resolver import ContactResolver
 from src.api.services.crm_client import TwentyCrmClient
 from src.api.services.crm_helpers import message_snippet, resolve_account
 from src.api.services.dialog_quota import ensure_dialog_can_be_created
 from src.db.database import Database
-from src.db.models import Account, CreatorMessage, Deal, User, UserInstagramAccount, UserShortlist
+from src.db.models import (
+    Account,
+    ChannelIdentity,
+    CreatorMessage,
+    Deal,
+    SenderAccount,
+    Thread,
+    User,
+    UserInstagramAccount,
+    UserShortlist,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/communications", tags=["CRM Communications"])
+
+
+@router.get("/account-availability", response_model=CommunicationAccountAvailability)
+async def get_account_availability(
+    current_user: User = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> CommunicationAccountAvailability:
+    async with db.async_session() as session:
+        await sync_legacy_pool(session, current_user.id)
+        total = await session.scalar(
+            select(func.count(SenderAccount.id)).where(
+                SenderAccount.user_id == current_user.id,
+                SenderAccount.platform == "instagram",
+                SenderAccount.deleted_at.is_(None),
+            ),
+        )
+        working = await session.scalar(
+            select(func.count(SenderAccount.id)).where(
+                SenderAccount.user_id == current_user.id,
+                SenderAccount.platform == "instagram",
+                SenderAccount.deleted_at.is_(None),
+                SenderAccount.rotation_enabled.is_(True),
+                SenderAccount.status == "ok",
+            ),
+        )
+        return CommunicationAccountAvailability(
+            total_accounts=total or 0,
+            working_accounts=working or 0,
+            has_working_account=bool(working),
+        )
 
 
 @router.post("/init", response_model=CommunicationChannelItem)
@@ -69,6 +120,25 @@ async def init_communication(
         if active_channel_type == "internal":
             active_channel_type = account.platform.lower() if account.platform else "instagram"
         await ensure_dialog_can_be_created(session, current_user.id, account.id, active_channel_type)
+        channel = None
+        thread = None
+        sender_account = None
+        if active_channel_type == "instagram":
+            try:
+                channel, thread, sender_account = await ensure_active_thread(
+                    session,
+                    user_id=current_user.id,
+                    author_account=account,
+                    deal=deal,
+                    platform="instagram",
+                )
+            except CommunicationServiceError as error:
+                raise HTTPException(
+                    status_code=error.status_code,
+                    detail={"code": error.code, "message": error.message},
+                ) from None
+            if deal is not None and sender_account.legacy_account_id is not None:
+                deal.instagram_account_id = sender_account.legacy_account_id
         existing_stmt = (
             select(CreatorMessage.id)
             .where(
@@ -92,6 +162,10 @@ async def init_communication(
                 channel_target=channel_target,
             )
             session.add(system_message)
+            if thread is not None and sender_account is not None:
+                system_message.thread_id = thread.id
+                system_message.sender_account_id = sender_account.id
+                system_message.sender_instagram_account_id = sender_account.legacy_account_id
             await session.commit()
             await session.refresh(system_message)
             last_message = "Диалог начат"
@@ -159,9 +233,21 @@ async def init_communication(
             channel_type=active_channel_type,
             channel_target=channel_target,
             available_channels=available_channels,
-            instagram_login=sender.normalized_login if sender else None,
-            instagram_status=sender.status if sender else None,
-            instagram_deleted=sender.deleted_at is not None if sender else False,
+            instagram_login=(
+                sender_account.normalized_login
+                if sender_account is not None
+                else (sender.normalized_login if sender else None)
+            ),
+            instagram_status=sender_account.status if sender_account is not None else (sender.status if sender else None),
+            instagram_deleted=(
+                sender_account.deleted_at is not None
+                if sender_account is not None
+                else (sender.deleted_at is not None if sender else False)
+            ),
+            communication_state=deal.communication_state if deal else None,
+            primary_thread_id=deal.primary_thread_id if deal else (thread.id if thread else None),
+            channel_identity_id=channel.id if channel is not None else None,
+            can_send=sender_account is not None or active_channel_type != "instagram",
         )
 
 
@@ -196,6 +282,20 @@ async def list_communications(
         if sender_ids:
             sender_result = await session.execute(select(UserInstagramAccount).where(UserInstagramAccount.id.in_(sender_ids)))
             sender_map = {sender.id: sender for sender in sender_result.scalars().all()}
+        can_send_instagram = await has_working_sender(session, current_user.id, "instagram")
+        thread_ids = {deal.primary_thread_id for deal in deals if deal.primary_thread_id is not None}
+        thread_map: dict[int, Thread] = {}
+        channel_map: dict[int, ChannelIdentity] = {}
+        if thread_ids:
+            thread_rows = list((await session.execute(
+                select(Thread).where(Thread.id.in_(thread_ids)),
+            )).scalars().all())
+            thread_map = {thread.id: thread for thread in thread_rows}
+            channel_ids = {thread.channel_identity_id for thread in thread_rows}
+            channel_rows = list((await session.execute(
+                select(ChannelIdentity).where(ChannelIdentity.id.in_(channel_ids)),
+            )).scalars().all())
+            channel_map = {channel.id: channel for channel in channel_rows}
 
         unread_stmt = (
             select(CreatorMessage.account_id, func.count(CreatorMessage.id))
@@ -266,6 +366,8 @@ async def list_communications(
             channel_target = (last_message.channel_target if last_message and last_message.channel_target and raw_channel_type != "internal" else target) or ""
             last_time = last_message.created_at if last_message else (best_deal.updated_at if best_deal else (account.created_at if account else datetime.now(timezone.utc)))
             sender = sender_map.get(best_deal.instagram_account_id) if best_deal and best_deal.instagram_account_id else None
+            primary_thread = thread_map.get(best_deal.primary_thread_id) if best_deal and best_deal.primary_thread_id else None
+            current_channel = channel_map.get(primary_thread.channel_identity_id) if primary_thread is not None else None
             channels.append(
                 CommunicationChannelItem(
                     id=str(account_id),
@@ -290,6 +392,10 @@ async def list_communications(
                     instagram_login=sender.normalized_login if sender else None,
                     instagram_status=sender.status if sender else None,
                     instagram_deleted=sender.deleted_at is not None if sender else False,
+                    communication_state=best_deal.communication_state if best_deal else None,
+                    primary_thread_id=best_deal.primary_thread_id if best_deal else None,
+                    channel_identity_id=current_channel.id if current_channel is not None else None,
+                    can_send=channel_type != "instagram" or can_send_instagram,
                 )
             )
     channels.sort(key=lambda channel: channel.last_message_time, reverse=True)

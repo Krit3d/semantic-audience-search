@@ -27,7 +27,12 @@ const STATUS_LABELS: Record<InstagramAccountItem['status'], string> = {
 
 const isPolling = (account: InstagramAccountItem) => account.status === 'in_queue' || account.status === 'needcheck';
 
-export default function InstagramAccounts() {
+const getDefaultCountry = (): string => {
+  const region = new Intl.Locale(navigator.language).region?.toLowerCase();
+  return region && region !== 'ru' && COUNTRIES.some(item => item.v === region) ? region : 'us';
+};
+
+export default function InstagramAccounts({ brandId }: { brandId?: number }) {
   const toast = useToast();
   const [accounts, setAccounts] = useState<InstagramAccountItem[]>([]);
   const [brands, setBrands] = useState<BrandItem[]>([]);
@@ -41,15 +46,15 @@ export default function InstagramAccounts() {
     if (!quiet) setLoading(true);
     setError(null);
     try {
-      const [accountItems, brandItems] = await Promise.all([api.getInstagramAccounts(), api.getBrands()]);
+      const [accountItems, brandItems] = await Promise.all([api.getInstagramAccounts(brandId), api.getBrands()]);
       setAccounts(accountItems);
       setBrands(brandItems);
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : 'Не удалось загрузить Instagram-аккаунты');
+      setError(reason instanceof Error ? reason.message : 'Не удалось загрузить аккаунты');
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, []);
+  }, [brandId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -68,7 +73,8 @@ export default function InstagramAccounts() {
     const target = deleting;
     setDeleteSaving(true);
     try {
-      await api.deleteInstagramAccount(target.id);
+      if (brandId) await api.deleteInstagramAccount(target.id, brandId);
+      else await api.deleteInstagramAccount(target.id);
       setAccounts(current => current.filter(item => item.id !== target.id));
       setDeleting(null);
       toast('info', `Аккаунт @${target.login} удалён`);
@@ -84,10 +90,10 @@ export default function InstagramAccounts() {
       <div className="px-4 pt-3.5 flex flex-wrap items-center gap-2">
         <span className="w-9 h-9 rounded-[10px] bg-violet-50 text-violet-600 flex items-center justify-center"><Instagram size={18} /></span>
         <div className="min-w-0">
-          <h2 id="instagram-accounts-title" className="m-0 text-[16px] font-extrabold text-ink">Instagram-аккаунты</h2>
-          <p className="m-0 text-[12px] text-muted">Аккаунты для диалогов от лица ваших брендов</p>
+          <h2 id="instagram-accounts-title" className="m-0 text-[16px] font-extrabold text-ink">Настройки аккаунтов</h2>
+          <p className="m-0 text-[12px] text-muted">Пул аккаунтов бренда · автоматическая ротация</p>
         </div>
-        <Btn size="sm" className="ml-auto !rounded-full" onClick={() => setAddOpen(true)}><Plus size={13} />Добавить Instagram</Btn>
+        <Btn size="sm" className="ml-auto !rounded-full" onClick={() => setAddOpen(true)}><Plus size={13} />Добавить аккаунт</Btn>
       </div>
       <div className="p-4">
         {loading && <SkeletonLines rows={4} />}
@@ -102,6 +108,7 @@ export default function InstagramAccounts() {
                 key={account.id}
                 account={account}
                 brand={brands.find(item => item.id === account.brand_id)}
+                brandId={brandId}
                 onUpdated={replaceAccount}
                 onDelete={() => setDeleting(account)}
               />
@@ -112,6 +119,7 @@ export default function InstagramAccounts() {
       {addOpen && (
         <InstagramAccountForm
           brands={brands}
+          fixedBrandId={brandId}
           onClose={() => setAddOpen(false)}
           onAdded={account => {
             setAccounts(current => [...current, account]);
@@ -134,7 +142,7 @@ export default function InstagramAccounts() {
             </div>
             <div>
               <div className="font-bold text-ink mb-1">Останется:</div>
-              <ul className="m-0 pl-5 text-muted"><li>Сделки, диалоги, история сообщений и сведения об отправителе. Активные сделки с этим аккаунтом будут архивированы с отметкой об удалении.</li></ul>
+              <ul className="m-0 pl-5 text-muted"><li>Сделки, их этапы, диалоги и история сообщений. Если в пуле есть другой рабочий аккаунт, канал будет заменён автоматически.</li></ul>
             </div>
           </div>
           <div className="px-5 py-4 border-t border-line flex justify-end gap-2">
@@ -147,9 +155,10 @@ export default function InstagramAccounts() {
   );
 }
 
-function InstagramAccountCard({ account, brand, onUpdated, onDelete }: {
+function InstagramAccountCard({ account, brand, brandId, onUpdated, onDelete }: {
   account: InstagramAccountItem;
   brand: BrandItem | undefined;
+  brandId?: number;
   onUpdated: (account: InstagramAccountItem) => void;
   onDelete: () => void;
 }) {
@@ -162,7 +171,9 @@ function InstagramAccountCard({ account, brand, onUpdated, onDelete }: {
     if (resuming) return;
     setResuming(true);
     try {
-      onUpdated(await api.resumeInstagramAccount(account.id));
+      onUpdated(brandId
+        ? await api.resumeInstagramAccount(account.id, brandId)
+        : await api.resumeInstagramAccount(account.id));
     } catch (reason: unknown) {
       toast('err', reason instanceof Error ? reason.message : 'Не удалось возобновить проверку');
     } finally {
@@ -181,6 +192,7 @@ function InstagramAccountCard({ account, brand, onUpdated, onDelete }: {
         <button type="button" aria-label={`Удалить @${account.login}`} onClick={onDelete} className="w-9 h-9 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center"><Trash2 size={16} /></button>
       </div>
       <div className="flex flex-wrap gap-1.5 text-[11.5px] font-semibold">
+        <span className="px-2 py-0.5 rounded-md bg-violet-50 text-violet-700">{account.platform ?? 'instagram'} · {account.provider ?? 'bridgit'} · {account.rotation_enabled === false ? 'вне ротации' : 'в ротации'}</span>
         <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">billing: {account.billing || '—'}</span>
         <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">promo: {account.promo || '—'}</span>
       </div>
@@ -196,6 +208,7 @@ function InstagramAccountCard({ account, brand, onUpdated, onDelete }: {
         <InstagramAccountForm
           account={account}
           brands={[]}
+          fixedBrandId={brandId}
           onClose={() => setActionOpen(false)}
           onAdded={updated => { onUpdated(updated); setActionOpen(false); }}
         />
@@ -204,9 +217,10 @@ function InstagramAccountCard({ account, brand, onUpdated, onDelete }: {
   );
 }
 
-function InstagramAccountForm({ account, brands, onClose, onAdded }: {
+function InstagramAccountForm({ account, brands, fixedBrandId, onClose, onAdded }: {
   account?: InstagramAccountItem;
   brands: BrandItem[];
+  fixedBrandId?: number;
   onClose: () => void;
   onAdded: (account: InstagramAccountItem) => void;
 }) {
@@ -214,8 +228,8 @@ function InstagramAccountForm({ account, brands, onClose, onAdded }: {
   const [login, setLogin] = useState(account?.login ?? '');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const [country, setCountry] = useState('');
-  const [brandId, setBrandId] = useState(account?.brand_id ? String(account.brand_id) : '');
+  const [country, setCountry] = useState(getDefaultCountry);
+  const [brandId, setBrandId] = useState(String(account?.brand_id ?? fixedBrandId ?? ''));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -228,18 +242,23 @@ function InstagramAccountForm({ account, brands, onClose, onAdded }: {
     setError(null);
     setFieldError(null);
     try {
+      const confirmation = {
+        ...(password ? { password } : {}),
+        ...(code ? { two_factor: code } : {}),
+      };
+      const creation = {
+        login: login.trim(),
+        password,
+        ...(country ? { country } : {}),
+        ...(brandId ? { brand_id: Number(brandId) } : {}),
+      };
       const updated = account
-        ? await api.confirmInstagramAccount(account.id, {
-          ...(password ? { password } : {}),
-          ...(code ? { two_factor: code } : {}),
-        })
-        : await api.addInstagramAccount({
-          login: login.trim(),
-          password,
-          ...(country ? { country } : {}),
-          ...(code ? { two_factor: code } : {}),
-          ...(brandId ? { brand_id: Number(brandId) } : {}),
-        });
+        ? (fixedBrandId
+          ? await api.confirmInstagramAccount(account.id, confirmation, fixedBrandId)
+          : await api.confirmInstagramAccount(account.id, confirmation))
+        : (fixedBrandId
+          ? await api.addInstagramAccount(creation, fixedBrandId)
+          : await api.addInstagramAccount(creation));
       setPassword('');
       setCode('');
       onAdded(updated);
@@ -276,8 +295,8 @@ function InstagramAccountForm({ account, brands, onClose, onAdded }: {
             {fieldError === 'password' && <span className="text-red-600">{error}</span>}
           </label>
         )}
-        {(codeRequired || !account) && (
-          <label className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">2FA или полученный код{!account && ' (необязательно)'}
+        {codeRequired && (
+          <label className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">2FA или полученный код
             <input value={code} onChange={event => setCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" className="h-9 px-3 rounded-lg border border-line text-[13.5px] text-ink outline-none focus:border-brand-400" />
             {fieldError === 'two_factor' && <span className="text-red-600">{error}</span>}
           </label>
@@ -288,10 +307,10 @@ function InstagramAccountForm({ account, brands, onClose, onAdded }: {
               <Select options={countryOptions} value={country} onChange={setCountry} label="Страна" width="100%" size="md" />
               {fieldError === 'country' && <span className="text-red-600">{error}</span>}
             </div>
-            <div className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">Бренд
+            {!fixedBrandId && <div className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">Бренд
               <Select options={brandOptions} value={brandId} onChange={setBrandId} label="Бренд" width="100%" size="md" />
               {fieldError === 'brand_id' && <span className="text-red-600">{error}</span>}
-            </div>
+            </div>}
           </>
         )}
         {error && !fieldError && <div role="alert" className="px-3 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-[12.5px] font-semibold">{error}</div>}

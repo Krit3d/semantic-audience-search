@@ -3,16 +3,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { Empty, ErrorState, Select, SkeletonLines } from '../../components/kit';
 import { Btn, useToast } from '../../components/ui';
 import { api, type BrandItem, type BrandKb, type BrandPayType, type BrandProduct, type BrandRequisites, type EridRecord } from '../../services/api';
-import InstagramAccounts from './InstagramAccounts';
 
-type Tab = 'main' | 'product' | 'rules' | 'terms' | 'accounts';
+type Tab = 'main' | 'product' | 'rules' | 'terms';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'main', label: 'Основная информация' },
   { id: 'product', label: 'Продукт и УТП' },
   { id: 'rules', label: 'Правила для авторов' },
   { id: 'terms', label: 'Условия сотрудничества' },
-  { id: 'accounts', label: 'Настройки аккаунтов' },
 ];
 
 const CATS = [
@@ -488,8 +486,6 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
               </button>
             </>
           )}
-
-          {tab === 'accounts' && <InstagramAccounts brandId={brandId} />}
 
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { Archive, Building2, Check, ChevronDown, ChevronRight, CreditCard, Download, Plus, Search, ShieldAlert, ShieldCheck, Upload, Users, X } from 'lucide-react';
+import { Archive, Building2, Check, ChevronDown, ChevronRight, CreditCard, Download, Instagram, Plus, Search, ShieldAlert, ShieldCheck, Upload, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Empty, ErrorState, Select, SkeletonLines } from '../../components/kit';
 import { Avatar, Btn, Modal, SidePanel, useToast } from '../../components/ui';
@@ -14,8 +14,9 @@ import { userName, api,
 } from '../../services/api';
 import { planTitle } from '../pricing/planMeta';
 import type { Social } from '../../data';
+import InstagramAccounts from './InstagramAccounts';
 
-type Section = 'brands' | 'authors' | 'erid';
+type Section = 'brands' | 'authors' | 'erid' | 'accounts';
 
 const ERID_STATUS_STYLE: Record<string, string> = {
   'Заполняют данные': 'bg-violet-50 text-violet-700 border-violet-200',
@@ -139,14 +140,12 @@ const initials = (name: string): string => {
   return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase();
 };
 
-export default function SettingsScreen({ user, onOpenBrand, onUserUpdated }: {
+export default function SettingsScreen({ user, onOpenBrand }: {
   user: Record<string, unknown> | null;
   onOpenBrand: (brandId: number) => void;
   onUserUpdated: (user: Record<string, unknown>) => void;
 }) {
   const toast = useToast();
-  const [instagram, setInstagram] = useState(typeof user?.instagram_username === 'string' ? user.instagram_username : '');
-  const [savingInstagram, setSavingInstagram] = useState(false);
   const [open, setOpen] = useState<Section>('brands');
   const [brands, setBrands] = useState<BrandItem[]>([]);
   const [creators, setCreators] = useState<CreatorRecord[]>([]);
@@ -219,34 +218,20 @@ export default function SettingsScreen({ user, onOpenBrand, onUserUpdated }: {
             <div className="text-[15px] font-extrabold text-ink">{name || '—'}</div>
             <div className="text-[13px] text-muted">{email || '—'}</div>
           </div>
-          <label className="ml-auto flex items-center gap-2 text-[12.5px] font-semibold text-muted">Instagram
-            <input value={instagram} onChange={event => setInstagram(event.target.value)} placeholder="@username" className="w-48 h-9 px-3 rounded-lg border border-line bg-white text-[13px] text-ink outline-none focus:border-brand-400" />
-          </label>
-          <Btn size="sm" disabled={savingInstagram} onClick={() => {
-            setSavingInstagram(true);
-            api.updateMe(instagram.trim())
-              .then(updated => {
-                api.updateUser(updated);
-                onUserUpdated(updated);
-                setInstagram(typeof updated.instagram_username === 'string' ? updated.instagram_username : '');
-                toast('ok', 'Instagram сохранён');
-              })
-              .catch(() => toast('err', 'Не удалось сохранить Instagram'))
-              .finally(() => setSavingInstagram(false));
-          }}>{savingInstagram ? 'Сохраняем…' : 'Сохранить'}</Btn>
         </section>
 
         <SubscriptionCard />
 
         <div className="mt-2">
           <h2 className="text-[18px] font-collab font-semibold text-ink">Настройки бренда</h2>
-          <p className="text-[12.5px] font-medium text-muted mt-1">Клиенты и бренды, общая база авторов и маркировка рекламы</p>
+          <p className="text-[12.5px] font-medium text-muted mt-1">Клиенты и бренды, общая база авторов, маркировка рекламы и аккаунты для связи</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
           {widget('brands', 'Клиенты и бренды', `${brands.length} брендов · продукт, правила, условия, реквизиты`, <Building2 size={20} />)}
           {widget('authors', 'База авторов', `${creators.length} авторов · ${shortlist.length} в шорт-листе`, <Users size={20} />)}
           {widget('erid', 'Маркировка ERID', `${eridRecords.length} маркеров · ${noEridPubs.length} публикации без ERID`, <ShieldCheck size={20} />)}
+          {widget('accounts', 'Аккаунты для связи', 'Instagram · добавление и подтверждение', <Instagram size={20} />)}
         </div>
 
         {loading && <div className="bg-white border border-line rounded-[14px] p-5"><SkeletonLines rows={6} /></div>}
@@ -286,6 +271,8 @@ export default function SettingsScreen({ user, onOpenBrand, onUserUpdated }: {
             onChanged={load}
           />
         )}
+
+        {!loading && !error && open === 'accounts' && <InstagramAccounts />}
       </div>
 
       {newBrandOpen && (

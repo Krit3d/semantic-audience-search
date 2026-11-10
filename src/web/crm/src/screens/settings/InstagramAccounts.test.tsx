@@ -75,9 +75,9 @@ describe('InstagramAccounts', () => {
     await user.click(await screen.findByRole('button', { name: 'Добавить аккаунт' }));
     await user.type(screen.getByLabelText('Логин'), 'creator');
     await user.type(screen.getByLabelText('Пароль'), 'private-password');
-    expect(screen.queryByLabelText(/2FA/)).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/2FA/), '123456');
     await user.click(screen.getByRole('button', { name: 'Добавить' }));
-    await waitFor(() => expect(mockedApi.addInstagramAccount).toHaveBeenCalledWith({ login: 'creator', password: 'private-password', country: 'us' }));
+    await waitFor(() => expect(mockedApi.addInstagramAccount).toHaveBeenCalledWith({ login: 'creator', password: 'private-password', country: 'us', two_factor: '123456' }));
     expect(screen.queryByDisplayValue('private-password')).not.toBeInTheDocument();
     expect(await screen.findByText('Проверка...')).toBeInTheDocument();
   });
@@ -103,7 +103,7 @@ describe('InstagramAccounts', () => {
     const user = userEvent.setup();
     render(<InstagramAccounts />);
     await user.click(await screen.findByRole('button', { name: 'Ввести код' }));
-    await user.type(screen.getByLabelText('2FA или полученный код'), '123456');
+    await user.type(screen.getByLabelText(/2FA/), '123456');
     await user.click(screen.getByRole('button', { name: 'Подтвердить' }));
     await waitFor(() => expect(mockedApi.confirmInstagramAccount).toHaveBeenCalledWith(7, { two_factor: '123456' }));
   });

@@ -97,7 +97,7 @@ function VideoPlayer({ src }: { src: string }) {
 export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, initialAuthorId, initialDealId, onNewDeal }: { deals: Deal[]; user: Record<string, unknown> | null; onOpenDeal?: (id: string) => void; onOpenSettings: () => void; initialAuthorId?: string | null; initialDealId?: string | null; onNewDeal?: (authorId: string, meta?: { name?: string; handle?: string }) => void }) {
   const toast = useToast();
   const [instagramPromptOpen, setInstagramPromptOpen] = useState(false);
-  const [hasWorkingInstagram, setHasWorkingInstagram] = useState(false);
+  const [hasInstagramAccount, setHasInstagramAccount] = useState(false);
   const [channels, setChannels] = useState<CommunicationChannelItem[]>([]);
   const [channelsLoading, setChannelsLoading] = useState(true);
   const [channelsError, setChannelsError] = useState<string | null>(null);
@@ -133,12 +133,13 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
     api.getCommunicationAccountAvailability()
       .then(availability => {
         if (cancelled) return;
-        setHasWorkingInstagram(availability.has_working_account);
-        setInstagramPromptOpen(!availability.has_working_account);
+        const hasAccounts = availability.total_accounts > 0;
+        setHasInstagramAccount(hasAccounts);
+        setInstagramPromptOpen(!hasAccounts);
       })
       .catch(() => {
         if (!cancelled) {
-          setHasWorkingInstagram(false);
+          setHasInstagramAccount(false);
           setInstagramPromptOpen(false);
         }
       });
@@ -235,7 +236,7 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
   const targetDeal = ch && requestedDealId ? deals.find(d => d.id === String(requestedDealId) && d.authorId === String(ch.author_id)) : undefined;
   const activeDeals = ch ? deals.filter(d => d.authorId === String(ch.author_id) && d.stage >= 1 && d.stage <= 6) : [];
   const activeBudget = activeDeals.reduce((acc, d) => acc + d.budget, 0);
-  const instagramUnavailable = activeChannelType === 'instagram' && (!hasWorkingInstagram || ch?.can_send === false);
+  const instagramUnavailable = activeChannelType === 'instagram' && !hasInstagramAccount;
 
   const chatRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -324,7 +325,7 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
   const send = () => {
     if (instagramUnavailable) {
       setInstagramPromptOpen(true);
-      toast('err', 'Для общения требуется рабочий Instagram-аккаунт');
+      toast('err', 'Не добавлен ни один Instagram-аккаунт');
       return;
     }
     if ((!draft.trim() && !attachedFile) || !ch || isUploading) return;
@@ -349,10 +350,10 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
   };
 
   const handleStartChat = (targetId: string, channelType?: string) => {
-    if ((!channelType || channelType === 'instagram') && !hasWorkingInstagram) {
+    if ((!channelType || channelType === 'instagram') && !hasInstagramAccount) {
       setNewChatOpen(false);
       setInstagramPromptOpen(true);
-      toast('err', 'Для общения требуется рабочий Instagram-аккаунт');
+      toast('err', 'Не добавлен ни один Instagram-аккаунт');
       return;
     }
     api.initCommunication(targetId, channelType)
@@ -368,7 +369,7 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
   const handleReplaceChannel = () => {
     const deal = targetDeal ?? activeDeals[0];
     if (!deal || replacingChannel) return;
-    if (!hasWorkingInstagram) {
+    if (!hasInstagramAccount) {
       setInstagramPromptOpen(true);
       return;
     }
@@ -593,7 +594,7 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
         </div>
         {instagramUnavailable && (
           <div className="px-4 py-2.5 border-t border-amber-200 bg-amber-50 text-[12.5px] font-semibold text-amber-800">
-            Для общения требуется рабочий Instagram-аккаунт. История сообщений доступна только для просмотра.
+            Не добавлен ни один Instagram-аккаунт. История сообщений доступна только для просмотра.
           </div>
         )}
         <div className="p-3.5 border-t border-line bg-white shrink-0 flex items-end gap-2">
@@ -619,7 +620,7 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
             disabled={instagramUnavailable}
-            placeholder={instagramUnavailable ? 'Для общения требуется рабочий Instagram-аккаунт' : 'Сообщение для ' + (a?.nick ?? '') + '…'}
+            placeholder={instagramUnavailable ? 'Не добавлен ни один Instagram-аккаунт' : 'Сообщение для ' + (a?.nick ?? '') + '…'}
             className="flex-1 resize-none scroll-thin rounded-xl border border-line px-3.5 py-2.5 text-[13px] leading-snug outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-100 transition-shadow disabled:opacity-60" />
           <Btn onClick={send} disabled={(!draft.trim() && !attachedFile) || isUploading || instagramUnavailable} className="!rounded-xl !w-9.5 !h-9.5 !p-0 shrink-0"><Send size={15} /></Btn>
         </div>
@@ -655,14 +656,14 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
       {instagramPromptOpen && (
         <Modal onClose={() => setInstagramPromptOpen(false)} w="max-w-md">
           <div className="px-5 py-4 border-b border-line">
-            <h2 className="m-0 text-[16px] font-collab font-semibold text-ink">Подключите Instagram</h2>
+            <h2 className="m-0 text-[16px] font-collab font-semibold text-ink">Instagram-аккаунты не добавлены</h2>
           </div>
           <div className="px-5 py-4 text-[13px] text-muted leading-relaxed">
-            Для общения требуется рабочий Instagram-аккаунт. Добавьте или подтвердите его в настройках бренда. Историю сообщений можно просматривать без аккаунта.
+            Сейчас не добавлен ни один Instagram-аккаунт. Добавьте аккаунт в разделе «Аккаунты для связи», чтобы писать сообщения. История переписки доступна и без аккаунта.
           </div>
           <div className="px-5 py-4 border-t border-line flex justify-end gap-2">
             <Btn variant="secondary" onClick={() => setInstagramPromptOpen(false)}>Позже</Btn>
-            <Btn onClick={onOpenSettings}>Открыть настройки бренда</Btn>
+            <Btn onClick={onOpenSettings}>Открыть аккаунты для связи</Btn>
           </div>
         </Modal>
       )}

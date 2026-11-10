@@ -250,6 +250,7 @@ function InstagramAccountForm({ account, brands, fixedBrandId, onClose, onAdded 
         login: login.trim(),
         password,
         ...(country ? { country } : {}),
+        ...(code.trim() ? { two_factor: code.trim() } : {}),
         ...(brandId ? { brand_id: Number(brandId) } : {}),
       };
       const updated = account
@@ -295,8 +296,8 @@ function InstagramAccountForm({ account, brands, fixedBrandId, onClose, onAdded 
             {fieldError === 'password' && <span className="text-red-600">{error}</span>}
           </label>
         )}
-        {codeRequired && (
-          <label className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">2FA или полученный код
+        {(codeRequired || !account) && (
+          <label className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">Код 2FA{!account ? ' (необязательно)' : ' или полученный код'}
             <input value={code} onChange={event => setCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" className="h-9 px-3 rounded-lg border border-line text-[13.5px] text-ink outline-none focus:border-brand-400" />
             {fieldError === 'two_factor' && <span className="text-red-600">{error}</span>}
           </label>

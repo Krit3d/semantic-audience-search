@@ -146,7 +146,10 @@ export default function SettingsScreen({ user, onOpenBrand }: {
   onUserUpdated: (user: Record<string, unknown>) => void;
 }) {
   const toast = useToast();
-  const [open, setOpen] = useState<Section>('brands');
+  const [open, setOpen] = useState<Section>(() => {
+    const query = window.location.hash.split('?')[1] ?? '';
+    return new URLSearchParams(query).get('tab') === 'accounts' ? 'accounts' : 'brands';
+  });
   const [brands, setBrands] = useState<BrandItem[]>([]);
   const [creators, setCreators] = useState<CreatorRecord[]>([]);
   const [shortlist, setShortlist] = useState<ShortlistItem[]>([]);

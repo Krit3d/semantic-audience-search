@@ -124,6 +124,13 @@ class BridgitClient:
             if response.status_code == 504 and is_get:
                 raise BridgitTimeoutError()
             if response.status_code != 200:
+                if response.status_code == 400:
+                    try:
+                        error_data = response.json()
+                    except (ValueError, TypeError):
+                        error_data = None
+                    if isinstance(error_data, dict):
+                        raise BridgitClient._payload_error(error_data, "")
                 raise BridgitAPIError(
                     f"Bridgit returned HTTP {response.status_code}",
                     status_code=502,

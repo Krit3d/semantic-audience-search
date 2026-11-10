@@ -242,8 +242,12 @@ class InstagramAccountService:
                         .where(UserInstagramAccount.user_id == user_id)
                         .where(UserInstagramAccount.deleted_at.is_(None))
                     )
-                    async with self._client() as client:
-                        await client.remove_account(account.normalized_login)
+                    try:
+                        async with self._client() as client:
+                            await client.remove_account(account.normalized_login)
+                    except BridgitAPIError as error:
+                        if error.field != "login":
+                            raise
                     now = datetime.now(timezone.utc)
                     sender = await ensure_sender_account(session, account)
                     account.status = "deleted"

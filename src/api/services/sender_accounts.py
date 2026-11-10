@@ -291,8 +291,12 @@ class SenderAccountService:
                             SenderAccount.deleted_at.is_(None),
                         ),
                     )
-                    async with self._client() as client:
-                        await client.remove_account(account.normalized_login)
+                    try:
+                        async with self._client() as client:
+                            await client.remove_account(account.normalized_login)
+                    except BridgitAPIError as error:
+                        if error.field != "login":
+                            raise
                     account.status = "deleted"
                     account.deleted_at = datetime.now(timezone.utc)
                     account.password_ciphertext = None

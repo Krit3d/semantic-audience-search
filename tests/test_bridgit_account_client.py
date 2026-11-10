@@ -182,6 +182,19 @@ async def test_account_errors_are_machine_readable(payload: dict, result: str | 
 
 
 @pytest.mark.asyncio
+async def test_http_400_preserves_bridgit_validation_details() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"status": "error", "error_code": 5, "message": "missed_params", "explain": "login"})
+
+    client = make_client(handler)
+    with pytest.raises(BridgitAPIError) as error:
+        await client.remove_account("invalid")
+    assert error.value.field == "login"
+    assert error.value.status_code == 502
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("body", ["[]", "null", json.dumps({"status": "success", "result": None})])
 async def test_unknown_payload_is_safe_error(body: str) -> None:
     async def handler(request: httpx.Request) -> httpx.Response:

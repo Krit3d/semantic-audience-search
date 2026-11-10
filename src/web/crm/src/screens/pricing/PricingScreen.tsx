@@ -157,11 +157,18 @@ function SubscriptionCard({ sub, onPay, onChanged }: { sub: SubscriptionStatusIn
   const meta = statusMeta(sub);
   const currentPlan = sub.plan;
   const [cancelOpen, setCancelOpen] = useState(false);
+  const manualAccess = sub.is_active && sub.status !== 'trial' && !sub.last_payment_at;
   const rows: { label: string; value: string }[] = [
     { label: 'Тариф', value: currentPlan ? planTitle(currentPlan.name) : sub.status === 'trial' ? 'Триал' : '—' },
-    { label: sub.status === 'trial' ? 'Начат' : sub.is_active ? 'Оформлена' : 'Дата первой оплаты', value: fmtDate(sub.started_at ?? sub.registered_at) },
-    { label: sub.is_active ? 'Действует до' : 'Завершён', value: fmtDate(sub.expires_at) },
   ];
+  if (manualAccess) {
+    rows.push({ label: 'Доступ предоставлен до', value: fmtDate(sub.expires_at) });
+  } else {
+    rows.push(
+      { label: sub.status === 'trial' ? 'Начат' : sub.is_active ? 'Оформлена' : 'Дата первой оплаты', value: fmtDate(sub.started_at ?? sub.registered_at) },
+      { label: sub.is_active ? 'Действует до' : 'Завершён', value: fmtDate(sub.expires_at) },
+    );
+  }
   if (sub.last_payment_at) rows.push({ label: 'Последнее списание', value: fmtDate(sub.last_payment_at) });
 
   return (
@@ -185,7 +192,9 @@ function SubscriptionCard({ sub, onPay, onChanged }: { sub: SubscriptionStatusIn
         ))}
       </div>
       <div className="mt-4 text-[12.5px] font-medium text-gray-500 leading-relaxed">
-        {sub.is_active && sub.status === 'trial' ? (
+        {manualAccess ? (
+          <>Доступ предоставлен администратором. Автоматическое продление и списания не подключены.</>
+        ) : sub.is_active && sub.status === 'trial' ? (
           <>У вас полный пробный доступ. Карта не привязана, автоматического списания в конце периода не будет.</>
         ) : sub.is_active ? (
           <>

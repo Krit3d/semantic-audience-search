@@ -73,7 +73,7 @@ describe('InstagramAccounts', () => {
     const user = userEvent.setup();
     render(<InstagramAccounts />);
     await user.click(await screen.findByRole('button', { name: 'Добавить аккаунт' }));
-    await user.type(screen.getByLabelText('Логин'), 'creator');
+    await user.type(screen.getByLabelText('Логин Instagram (юзернейм)'), 'creator');
     await user.type(screen.getByLabelText('Пароль'), 'private-password');
     await user.type(screen.getByLabelText(/2FA/), '123456');
     await user.click(screen.getByRole('button', { name: 'Добавить' }));
@@ -82,13 +82,26 @@ describe('InstagramAccounts', () => {
     expect(await screen.findByText('Проверка...')).toBeInTheDocument();
   });
 
+  it('opens the backup code video instruction', async () => {
+    const user = userEvent.setup();
+    render(<InstagramAccounts />);
+    await user.click(await screen.findByRole('button', { name: 'Добавить аккаунт' }));
+    expect(screen.getByText('Можно выбрать страну входа, например, ту же, что у вашего VPN. Если нужной страны нет — выберите Беларусь')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Где взять резервный код?' }));
+    const video = screen.getByLabelText('Инструкция: где взять резервный код Instagram');
+    expect(video).toHaveAttribute('src', '/instructions/instagram-2fa-backup-code.mp4');
+    await user.click(screen.getByRole('button', { name: 'Закрыть видео' }));
+    expect(screen.queryByLabelText('Инструкция: где взять резервный код Instagram')).not.toBeInTheDocument();
+  });
+
   it('prevents duplicate submission while request is pending', async () => {
     let resolveRequest: ((value: InstagramAccountItem) => void) | undefined;
     mockedApi.addInstagramAccount.mockReturnValue(new Promise(resolve => { resolveRequest = resolve; }));
     const user = userEvent.setup();
     render(<InstagramAccounts />);
     await user.click(await screen.findByRole('button', { name: 'Добавить аккаунт' }));
-    await user.type(screen.getByLabelText('Логин'), 'creator');
+    await user.type(screen.getByLabelText('Логин Instagram (юзернейм)'), 'creator');
     await user.type(screen.getByLabelText('Пароль'), 'private-password');
     const submit = screen.getByRole('button', { name: 'Добавить' });
     await user.click(submit);

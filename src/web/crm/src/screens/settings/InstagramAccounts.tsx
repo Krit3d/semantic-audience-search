@@ -3,15 +3,53 @@ import { useCallback, useEffect, useState } from 'react';
 import { Empty, ErrorState, Select, SkeletonLines } from '../../components/kit';
 import { Btn, Modal, useToast } from '../../components/ui';
 import { ApiError, api, type BrandItem, type InstagramAccountItem } from '../../services/api';
-import countryData from '../../../../../config/iso_countries.json';
 
-type CountryItem = { code: string; name_ru: string };
-type CountryData = { countries: CountryItem[] };
-
-const COUNTRIES = (countryData as CountryData).countries
-  .filter(item => item.code.toLowerCase() !== 'ru')
-  .map(item => ({ v: item.code.toLowerCase(), label: `${item.name_ru} (${item.code.toLowerCase()})` }))
-  .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+const COUNTRIES = [
+  { v: 'at', label: 'Австрия (Austria)' },
+  { v: 'az', label: 'Азербайджан (Azerbaijan)' },
+  { v: 'by', label: 'Беларусь (Belarus)' },
+  { v: 'bg', label: 'Болгария (Bulgaria)' },
+  { v: 'br', label: 'Бразилия (Brazil)' },
+  { v: 'gb', label: 'Великобритания (United Kingdom)' },
+  { v: 'hu', label: 'Венгрия (Hungary)' },
+  { v: 've', label: 'Венесуэла (Venezuela)' },
+  { v: 'vn', label: 'Вьетнам (Vietnam)' },
+  { v: 'de', label: 'Германия (Germany)' },
+  { v: 'gr', label: 'Греция (Greece)' },
+  { v: 'ge', label: 'Грузия (Georgia)' },
+  { v: 'dk', label: 'Дания (Denmark)' },
+  { v: 'il', label: 'Израиль (Israel)' },
+  { v: 'id', label: 'Индонезия (Indonesia)' },
+  { v: 'es', label: 'Испания (Spain)' },
+  { v: 'it', label: 'Италия (Italy)' },
+  { v: 'kz', label: 'Казахстан (Kazakhstan)' },
+  { v: 'ca', label: 'Канада (Canada)' },
+  { v: 'ke', label: 'Кения (Kenya)' },
+  { v: 'cy', label: 'Кипр (Cyprus)' },
+  { v: 'kg', label: 'Киргизия (Kyrgyzstan)' },
+  { v: 'lv', label: 'Латвия (Latvia)' },
+  { v: 'lt', label: 'Литва (Lithuania)' },
+  { v: 'md', label: 'Молдова (Moldova)' },
+  { v: 'nl', label: 'Нидерланды (Netherlands)' },
+  { v: 'no', label: 'Норвегия (Norway)' },
+  { v: 'ae', label: 'ОАЭ (United Arab Emirates)' },
+  { v: 'pl', label: 'Польша (Poland)' },
+  { v: 'pt', label: 'Португалия (Portugal)' },
+  { v: 'ro', label: 'Румыния (Romania)' },
+  { v: 'us', label: 'США (United States)' },
+  { v: 'rs', label: 'Сербия (Serbia)' },
+  { v: 'th', label: 'Таиланд (Thailand)' },
+  { v: 'tr', label: 'Турция (Turkey)' },
+  { v: 'uz', label: 'Узбекистан (Uzbekistan)' },
+  { v: 'ua', label: 'Украина (Ukraine)' },
+  { v: 'fi', label: 'Финляндия (Finland)' },
+  { v: 'fr', label: 'Франция (France)' },
+  { v: 'cz', label: 'Чехия (Czech Republic)' },
+  { v: 'ch', label: 'Швейцария (Switzerland)' },
+  { v: 'se', label: 'Швеция (Sweden)' },
+  { v: 'ee', label: 'Эстония (Estonia)' },
+  { v: 'kr', label: 'Южная Корея (South Korea)' },
+];
 
 const STATUS_LABELS: Record<InstagramAccountItem['status'], string> = {
   in_queue: 'Проверка...',
@@ -233,6 +271,7 @@ function InstagramAccountForm({ account, brands, fixedBrandId, onClose, onAdded 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
+  const [videoOpen, setVideoOpen] = useState(false);
   const passwordRequired = !account || account.status === 'bad_password';
   const codeRequired = Boolean(account && ['not_logged_in', 'not_logged_in_bad', 'email_code'].includes(account.status));
 
@@ -274,52 +313,66 @@ function InstagramAccountForm({ account, brands, fixedBrandId, onClose, onAdded 
   };
 
   const brandOptions = [{ v: '', label: 'Без бренда' }, ...brands.map(item => ({ v: String(item.id), label: item.name }))];
-  const countryOptions = [{ v: '', label: 'Выберите страну' }, ...COUNTRIES];
   const valid = Boolean(account || (login.trim() && password)) && (!passwordRequired || password) && (!codeRequired || code);
 
   return (
-    <Modal onClose={onClose} w="max-w-md">
-      <div className="px-5 py-4 border-b border-line flex items-center justify-between">
-        <h2 className="m-0 text-[16px] font-collab font-semibold text-ink">{account ? `Подтверждение @${account.login}` : 'Добавить Instagram'}</h2>
-        <button type="button" aria-label="Закрыть" onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
-      </div>
-      <div className="px-5 py-4 flex flex-col gap-3">
-        {!account && (
-          <label className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">Логин
-            <input value={login} onChange={event => setLogin(event.target.value)} autoFocus autoComplete="username" className="h-9 px-3 rounded-lg border border-line text-[13.5px] text-ink outline-none focus:border-brand-400" />
-            {fieldError === 'login' && <span className="text-red-600">{error}</span>}
-          </label>
-        )}
-        {(!account || passwordRequired || codeRequired) && (
-          <label className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">{account ? `Новый пароль${passwordRequired ? '' : ' (необязательно)'}` : 'Пароль'}
-            <input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" className="h-9 px-3 rounded-lg border border-line text-[13.5px] text-ink outline-none focus:border-brand-400" />
-            {fieldError === 'password' && <span className="text-red-600">{error}</span>}
-          </label>
-        )}
-        {(codeRequired || !account) && (
-          <label className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">Код 2FA{!account ? ' (необязательно)' : ' или полученный код'}
-            <input value={code} onChange={event => setCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" className="h-9 px-3 rounded-lg border border-line text-[13.5px] text-ink outline-none focus:border-brand-400" />
-            {fieldError === 'two_factor' && <span className="text-red-600">{error}</span>}
-          </label>
-        )}
-        {!account && (
-          <>
-            <div className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">Страна
-              <Select options={countryOptions} value={country} onChange={setCountry} label="Страна" width="100%" size="md" />
-              {fieldError === 'country' && <span className="text-red-600">{error}</span>}
+    <>
+      <Modal onClose={onClose} w="max-w-md">
+        <div className="px-5 py-4 border-b border-line flex items-center justify-between">
+          <h2 className="m-0 text-[16px] font-collab font-semibold text-ink">{account ? `Подтверждение @${account.login}` : 'Добавить Instagram'}</h2>
+          <button type="button" aria-label="Закрыть" onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="px-5 py-4 flex flex-col gap-3 overflow-y-auto">
+          {!account && (
+            <label className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">Логин Instagram (юзернейм)
+              <input value={login} onChange={event => setLogin(event.target.value)} autoFocus autoComplete="username" className="h-9 px-3 rounded-lg border border-line text-[13.5px] text-ink outline-none focus:border-brand-400" />
+              {fieldError === 'login' && <span className="text-red-600">{error}</span>}
+            </label>
+          )}
+          {(!account || passwordRequired || codeRequired) && (
+            <label className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">{account ? `Новый пароль${passwordRequired ? '' : ' (необязательно)'}` : 'Пароль'}
+              <input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" className="h-9 px-3 rounded-lg border border-line text-[13.5px] text-ink outline-none focus:border-brand-400" />
+              {fieldError === 'password' && <span className="text-red-600">{error}</span>}
+            </label>
+          )}
+          {!account && (
+            <>
+              <div className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">Страна прокси
+                <Select options={COUNTRIES} value={country} onChange={setCountry} label="Страна прокси" width="100%" size="md" />
+                <p className="m-0 text-[12px] font-normal leading-relaxed text-muted">Можно выбрать страну входа, например, ту же, что у вашего VPN. Если нужной страны нет — выберите Беларусь</p>
+                {fieldError === 'country' && <span className="text-red-600">{error}</span>}
+              </div>
+              {!fixedBrandId && <div className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">Бренд
+                <Select options={brandOptions} value={brandId} onChange={setBrandId} label="Бренд" width="100%" size="md" />
+                {fieldError === 'brand_id' && <span className="text-red-600">{error}</span>}
+              </div>}
+            </>
+          )}
+          {(codeRequired || !account) && (
+            <div className="flex flex-col gap-1">
+              <label className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">Код 2FA (резервный)
+                <input value={code} onChange={event => setCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" className="h-9 px-3 rounded-lg border border-line text-[13.5px] text-ink outline-none focus:border-brand-400" />
+              </label>
+              <p className="m-0 text-[12px] leading-relaxed text-muted">Если у вас включена двухфакторная авторизация — введите один из резервных кодов. <button type="button" onClick={() => setVideoOpen(true)} className="font-bold text-ink underline underline-offset-2 hover:text-brand-600 focus-visible:outline-2 focus-visible:outline-brand-400">Где взять резервный код?</button> Если 2FA не включена — оставьте поле пустым.</p>
+              {fieldError === 'two_factor' && <span className="text-[11.5px] font-semibold text-red-600">{error}</span>}
             </div>
-            {!fixedBrandId && <div className="flex flex-col gap-1 text-[11.5px] font-semibold text-muted">Бренд
-              <Select options={brandOptions} value={brandId} onChange={setBrandId} label="Бренд" width="100%" size="md" />
-              {fieldError === 'brand_id' && <span className="text-red-600">{error}</span>}
-            </div>}
-          </>
-        )}
-        {error && !fieldError && <div role="alert" className="px-3 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-[12.5px] font-semibold">{error}</div>}
-      </div>
-      <div className="px-5 py-4 border-t border-line flex justify-end gap-2">
-        <Btn variant="secondary" size="sm" onClick={onClose}>Отмена</Btn>
-        <Btn size="sm" disabled={!valid || saving} onClick={() => void submit()}>{saving ? 'Отправляем…' : account ? 'Подтвердить' : 'Добавить'}</Btn>
-      </div>
-    </Modal>
+          )}
+          {error && !fieldError && <div role="alert" className="px-3 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-[12.5px] font-semibold">{error}</div>}
+        </div>
+        <div className="px-5 py-4 border-t border-line flex justify-end gap-2">
+          <Btn variant="secondary" size="sm" onClick={onClose}>Отмена</Btn>
+          <Btn size="sm" disabled={!valid || saving} onClick={() => void submit()}>{saving ? 'Отправляем…' : account ? 'Подтвердить' : 'Добавить'}</Btn>
+        </div>
+      </Modal>
+      {videoOpen && (
+        <Modal onClose={() => setVideoOpen(false)} w="max-w-2xl">
+          <div className="px-5 py-4 border-b border-line flex items-center justify-between">
+            <h2 className="m-0 text-[16px] font-collab font-semibold text-ink">Где взять резервный код?</h2>
+            <button type="button" aria-label="Закрыть видео" onClick={() => setVideoOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+          </div>
+          <video className="w-full max-h-[75vh] bg-black" controls autoPlay playsInline preload="metadata" aria-label="Инструкция: где взять резервный код Instagram" src="/instructions/instagram-2fa-backup-code.mp4" />
+        </Modal>
+      )}
+    </>
   );
 }

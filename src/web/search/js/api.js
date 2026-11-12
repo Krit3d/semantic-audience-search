@@ -5,7 +5,13 @@ export class SearchApiClient {
   }
 
   async search(payload, signal) {
-    return this._post("/api/v1/search/", payload, signal);
+    const headers = { Accept: "application/json" };
+    try {
+      const token = localStorage.getItem("creatorflow_token") || localStorage.getItem("cf_token");
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+    } catch {
+    }
+    return this._post("/api/v1/search/", payload, signal, headers);
   }
 
   async getLanguages(signal) {

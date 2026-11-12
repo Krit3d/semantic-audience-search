@@ -67,8 +67,8 @@ class PostgresHydrator:
         direct_candidates: list[DbsfScoredCandidate],
         affinity_candidates: list[DbsfScoredCandidate],
         request: SearchRequest,
-        direct_limit: int = 20,
-        affinity_limit: int = 20,
+        direct_limit: int | None = 20,
+        affinity_limit: int | None = 20,
     ) -> list[tuple[DbsfScoredCandidate, HydratedAuthorRecord]]:
         if not direct_candidates and not affinity_candidates:
             return []

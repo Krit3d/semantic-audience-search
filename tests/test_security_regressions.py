@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 from io import BytesIO
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException, UploadFile
@@ -9,7 +10,7 @@ from starlette.datastructures import Headers
 from starlette.requests import Request
 
 from src.api.routers.crm import creators, media, webhooks
-from src.api.routers.search import authorize_contact_results, search_content
+from src.api.routers.search import authorize_contact_results, has_unlimited_author_results, search_content
 from src.api.schemas import SearchRequest
 from src.db.models import User
 from src.utils.rate_limiter import InMemoryRateLimiter
@@ -405,7 +406,8 @@ async def test_active_user_search_returns_contact_results(monkeypatch):
 
     contacts = {"emails": ["synthetic@example.invalid"]}
 
-    async def execute_search(payload):
+    async def execute_search(payload, result_limit=20):
+        assert result_limit == 20
         assert payload.include_contacts is True
         return SimpleNamespace(total=1, items=[SimpleNamespace(contacts=contacts)])
 
@@ -414,6 +416,7 @@ async def test_active_user_search_returns_contact_results(monkeypatch):
         request,
         SimpleNamespace(async_session=lambda: Session()),  # type: ignore[arg-type]
         SimpleNamespace(execute_search=execute_search),  # type: ignore[arg-type]
+        current_user=None,
     )
     assert response.total == 1
     assert response.items[0].contacts == contacts
@@ -423,7 +426,8 @@ async def test_active_user_search_returns_contact_results(monkeypatch):
 async def test_anonymous_search_without_contacts_is_allowed():
     request = make_request()
 
-    async def execute_search(payload):
+    async def execute_search(payload, result_limit=20):
+        assert result_limit == 20
         assert payload.include_contacts is False
         return SimpleNamespace(total=0, items=[])
 
@@ -433,9 +437,44 @@ async def test_anonymous_search_without_contacts_is_allowed():
         request,
         None,  # type: ignore[arg-type]
         service,  # type: ignore[arg-type]
+        current_user=None,
     )
     assert response.total == 0
     assert response.items == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("plan_name", ["basic", "pro"])
+async def test_active_paid_plans_have_unlimited_author_results(plan_name: str) -> None:
+    class Session:
+        async def __aenter__(self) -> "Session":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def scalar(self, _statement: object) -> str:
+            return plan_name
+
+    user = SimpleNamespace(
+        is_admin=False,
+        subscription_status="active",
+        subscription_expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+        plan_id=1,
+    )
+    db = SimpleNamespace(async_session=lambda: Session())
+    assert await has_unlimited_author_results(user, db) is True
+
+
+@pytest.mark.asyncio
+async def test_trial_keeps_limited_author_results():
+    user = SimpleNamespace(
+        is_admin=False,
+        subscription_status="trial",
+        subscription_expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+        plan_id=1,
+    )
+    assert await has_unlimited_author_results(user, None) is False
 
 
 @pytest.mark.asyncio

@@ -24,7 +24,7 @@ class SearchService:
     async def analyze_brand(self, payload: BrandAnalysisRequest) -> BrandAnalysisResponse:
         return await self._query_parser.analyze_brand(payload)
 
-    async def execute_search(self, request: SearchRequest) -> SearchResponse:
+    async def execute_search(self, request: SearchRequest, result_limit: int | None = 20) -> SearchResponse:
         start_time = time.perf_counter()
         timings: dict[str, float] = {}
 
@@ -197,8 +197,8 @@ class SearchService:
             direct_candidates=direct_candidates,
             affinity_candidates=affinity_candidates,
             request=hydration_request,
-            direct_limit=20,
-            affinity_limit=20,
+            direct_limit=result_limit,
+            affinity_limit=result_limit,
         )
         timings["db_hydration_ms"] = (time.perf_counter() - hydration_start) * 1000.0
 

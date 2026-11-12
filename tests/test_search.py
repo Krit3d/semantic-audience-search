@@ -422,7 +422,7 @@ class TestSearchService:
             include_contacts=False,
             include_analytics=True,
         )
-        response = await search_service.execute_search(request)
+        response = await search_service.execute_search(request, result_limit=None)
 
         assert isinstance(response, SearchResponse)
         assert response.total == 1
@@ -466,8 +466,8 @@ class TestSearchService:
             direct_candidates=scored_candidates,
             affinity_candidates=[],
             request=request.model_copy(update={"countries": None, "gender": "both"}),
-            direct_limit=20,
-            affinity_limit=20,
+            direct_limit=None,
+            affinity_limit=None,
         )
 
     @pytest.mark.asyncio

@@ -1,19 +1,38 @@
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import func, or_, select
 
-from src.api.dependencies import get_current_user, get_db, get_search_service
+from src.api.dependencies import get_current_user, get_db, get_optional_user, get_search_service
 from src.api.schemas import BrandAnalysisRequest, BrandAnalysisResponse, SearchPlanRequest, SearchPlanResponse, SearchRequest, SearchResponse, SimilarSearchRequest
 from src.api.services.search import SearchService
 from src.db.database import Database
-from src.db.models import Account, User
+from src.db.models import Account, SubscriptionPlan, User
+from src.utils.billing import has_access
 from src.utils.countries import get_all_countries
 from src.utils.languages import get_all_languages
 from src.utils.rate_limiter import rate_limit
 from src.utils.security import decode_access_token
 
 router = APIRouter(tags=["Search"])
+
+
+async def has_unlimited_author_results(user: User | None, db: Database) -> bool:
+    if user is None:
+        return False
+    if user.is_admin:
+        return True
+    if user.subscription_status == "trial":
+        return False
+    expires_at = user.subscription_expires_at
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if not has_access(user.subscription_status, expires_at, datetime.now(timezone.utc)) or user.plan_id is None:
+        return False
+    async with db.async_session() as session:
+        plan_name = await session.scalar(select(SubscriptionPlan.name).where(SubscriptionPlan.id == user.plan_id))
+    return plan_name in {"basic", "pro"}
 
 
 async def authorize_contact_results(request: Request, db: Database) -> None:
@@ -58,10 +77,12 @@ async def search_content(
     db: Database = Depends(get_db),
     service: SearchService = Depends(get_search_service),
     _rate_limit: None = Depends(rate_limit(max_requests=20, window_seconds=60)),
+    current_user: User | None = Depends(get_optional_user),
 ) -> SearchResponse:
     if payload.include_contacts:
         await authorize_contact_results(request, db)
-    return await service.execute_search(payload)
+    result_limit = None if await has_unlimited_author_results(current_user, db) else 20
+    return await service.execute_search(payload, result_limit=result_limit)
 
 
 @router.post("/plan", response_model=SearchPlanResponse, response_model_exclude_none=True)
@@ -125,7 +146,8 @@ async def search_similar(
     if not query:
         raise HTTPException(status_code=400, detail="Недостаточно данных об авторах для подбора похожих")
     request_payload = SearchRequest(query=query[:2000], limit=min(payload.limit + len(seed_ids) + 5, 100), author_type="all")
-    response = await service.execute_search(request_payload)
+    result_limit = None if await has_unlimited_author_results(current_user, db) else 20
+    response = await service.execute_search(request_payload, result_limit=result_limit)
     filtered = []
     for item in response.items:
         if item.account_id in seed_ids:

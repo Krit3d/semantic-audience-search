@@ -141,6 +141,28 @@ class InstagramAccountWorker:
                     claims.append((account.id, lease_owner))
                 return claims
 
+    async def _get_status_with_fallback(self, login: str) -> str:
+        try:
+            data = await self._client.get_account_status(login)
+            result = data.get("result")
+        except BridgitAPIError as error:
+            if error.status_code not in {500, 502, 504}:
+                raise
+            data = await self._client.get_accounts(login)
+            accounts = data.get("accounts")
+            if not isinstance(accounts, list):
+                raise BridgitAPIError("Invalid account status fallback payload") from None
+            normalized = login.strip().lstrip("@").lower()
+            result = next((
+                item.get("status")
+                for item in accounts
+                if isinstance(item, dict) and isinstance(item.get("login"), str)
+                and item["login"].strip().lstrip("@").lower() == normalized
+            ), None)
+        if not isinstance(result, str) or result not in _KNOWN_STATUSES:
+            raise BridgitAPIError("Unknown Instagram account status")
+        return result
+
     async def _poll_claimed_account(self, account_id: int, lease_owner: str) -> None:
         async with self._db.async_session() as session:
             account = await session.get(UserInstagramAccount, account_id)
@@ -148,10 +170,7 @@ class InstagramAccountWorker:
                 return
             login = account.normalized_login
         try:
-            data = await self._client.get_account_status(login)
-            result = data.get("result")
-            if not isinstance(result, str) or result not in _KNOWN_STATUSES:
-                raise BridgitAPIError("Unknown Instagram account status")
+            result = await self._get_status_with_fallback(login)
         except BridgitAPIError as error:
             await self._handle_poll_error(account_id, lease_owner, error)
             return
@@ -250,10 +269,7 @@ class InstagramAccountWorker:
                 return
             login = account.normalized_login
         try:
-            data = await self._client.get_account_status(login)
-            result = data.get("result")
-            if not isinstance(result, str) or result not in _KNOWN_STATUSES:
-                raise BridgitAPIError("Unknown Instagram account status")
+            result = await self._get_status_with_fallback(login)
         except BridgitAPIError as error:
             now = datetime.now(timezone.utc)
             async with self._db.async_session() as session:

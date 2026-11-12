@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 
+from src.api.services.bridgit_client import BridgitAPIError
 from src.config.config import Settings
 from src.db.models import UserInstagramAccount
 from src.workers.instagram_account_worker import InstagramAccountWorker
@@ -114,3 +116,16 @@ def test_sync_ignores_non_string_optional_metadata() -> None:
     assert item.promo is None
     assert item.remote_status is None
     assert item.status == "ok"
+
+
+@pytest.mark.asyncio
+async def test_currentstatus_502_falls_back_to_account_list() -> None:
+    client = AsyncMock()
+    client.get_account_status.side_effect = BridgitAPIError("unavailable", status_code=502)
+    client.get_accounts.return_value = {"accounts": [{"login": "creator", "status": "bad_password"}]}
+    worker = InstagramAccountWorker(AsyncMock(), settings(), client=client)
+
+    result = await worker._get_status_with_fallback("creator")
+
+    assert result == "bad_password"
+    client.get_accounts.assert_awaited_once_with("creator")

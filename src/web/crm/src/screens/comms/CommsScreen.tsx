@@ -133,9 +133,9 @@ export default function CommsScreen({ deals, user, onOpenDeal, onOpenSettings, i
     api.getCommunicationAccountAvailability()
       .then(availability => {
         if (cancelled) return;
-        const hasAccounts = availability.total_accounts > 0;
-        setHasInstagramAccount(hasAccounts);
-        setInstagramPromptOpen(!hasAccounts);
+        const hasWorkingAccount = availability.has_working_account;
+        setHasInstagramAccount(hasWorkingAccount);
+        setInstagramPromptOpen(!hasWorkingAccount);
       })
       .catch(() => {
         if (!cancelled) {

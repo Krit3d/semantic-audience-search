@@ -11,6 +11,7 @@ from src.api.schemas import (
     BrandKb,
     BrandUpdateRequest,
 )
+from src.api.services.usage_quota import ensure_usage_limit
 from src.db.database import Database
 from src.db.models import Brand, Deal, User
 
@@ -81,6 +82,17 @@ async def create_brand(
     db: Database = Depends(get_db),
 ) -> BrandItem:
     async with db.async_session() as session:
+        await session.execute(select(User.id).where(User.id == current_user.id).with_for_update())
+        used = await session.scalar(
+            select(func.count(Brand.id)).where(Brand.user_id == current_user.id)
+        )
+        await ensure_usage_limit(
+            session,
+            user_id=current_user.id,
+            limit_key="brand_limit",
+            used=used or 0,
+            resource_label="бренды",
+        )
         brand = Brand(
             user_id=current_user.id,
             name=payload.name.strip(),

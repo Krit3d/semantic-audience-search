@@ -14,6 +14,7 @@ from src.api.services.communication_domain import (
 )
 from src.api.services.instagram_accounts import InstagramAccountService, InstagramAccountServiceError
 from src.api.services.instagram_password_cipher import InstagramPasswordCipher
+from src.api.services.usage_quota import ensure_usage_limit
 from src.config.config import Settings
 from src.db.database import Database
 from src.db.models import Brand, SenderAccount, UserInstagramAccount
@@ -154,6 +155,20 @@ class SenderAccountService:
                     )
                     if existing is not None and existing.deleted_at is None:
                         raise InstagramAccountServiceError(409, "already1", "Этот профиль уже добавлен вами", "login")
+                    used = await session.scalar(
+                        select(func.count(SenderAccount.id)).where(
+                            SenderAccount.user_id == user_id,
+                            SenderAccount.platform == "instagram",
+                            SenderAccount.deleted_at.is_(None),
+                        )
+                    )
+                    await ensure_usage_limit(
+                        session,
+                        user_id=user_id,
+                        limit_key="instagram_account_limit",
+                        used=used or 0,
+                        resource_label="Instagram-аккаунты",
+                    )
                     other_user_account = await session.scalar(
                         select(SenderAccount.id).where(
                             SenderAccount.platform == "instagram",

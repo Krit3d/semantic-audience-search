@@ -20,7 +20,8 @@ const FEATURE_TITLES = {
 };
 const LIMIT_TITLES = {
   brand_limit: "Брендов в базе знаний",
-  dialogs_monthly_limit: "Диалогов в месяц",
+  instagram_account_limit: "Instagram-аккаунтов для связи",
+  dialogs_monthly_limit: "Диалогов с авторами в месяц",
 };
 
 const SUBSCRIPTION_INCLUDES = [

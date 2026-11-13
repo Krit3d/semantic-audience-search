@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, Lock, LogOut, Zap } from 'lucide-react';
 import { api, legalUrl, type SubscriptionPlanItem, type SubscriptionStatusInfo } from '../services/api';
 import { Btn } from '../components/ui';
-import { FEATURE_TITLES, fmtPrice, planTitle } from './pricing/planMeta';
+import { FEATURE_TITLES, fmtPrice, planLimits, planTitle } from './pricing/planMeta';
 
 const PUBLIC_PRICING_URL = `${((import.meta.env.VITE_SEARCH_URL as string | undefined) || 'https://collabrama.ru').replace(/\/+$/, '')}/pricing`;
 
@@ -48,9 +48,7 @@ function TrialBanner({ sub, onActivated }: { sub: SubscriptionStatusInfo | null;
 
 function PlanCard({ plan, onPay }: { plan: SubscriptionPlanItem; onPay: (name: string) => void }) {
   const disabled = !plan.is_active;
-  const limits: string[] = [];
-  if (plan.limits.brand_limit) limits.push(`Брендов: ${plan.limits.brand_limit}`);
-  if (plan.limits.dialogs_monthly_limit) limits.push(`Диалогов в месяц: ${plan.limits.dialogs_monthly_limit}`);
+  const limits = planLimits(plan);
   const features = Object.entries(plan.features)
     .filter(([, enabled]) => enabled)
     .map(([key]) => FEATURE_TITLES[key] ?? key);

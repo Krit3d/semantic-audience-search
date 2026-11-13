@@ -9,8 +9,9 @@ from src.api.instagram_schemas import (
     InstagramAccountResponse,
 )
 from src.api.services.bridgit_client import BridgitAPIError, BridgitClient
-from src.api.services.communication_domain import ensure_sender_account, handle_sender_unavailable
+from src.api.services.communication_domain import ensure_sender_account, handle_sender_unavailable, sync_legacy_pool
 from src.api.services.instagram_password_cipher import InstagramPasswordCipher
+from src.api.services.usage_quota import ensure_usage_limit
 from src.config.config import Settings
 from src.db.database import Database
 from src.db.models import Brand, SenderAccount, User, UserInstagramAccount
@@ -127,6 +128,21 @@ class InstagramAccountService:
                     existing = await self._account_by_login(session, user_id, normalized_login)
                     if existing is not None and existing.deleted_at is None:
                         raise InstagramAccountServiceError(409, "already1", "Этот профиль уже добавлен вами", "login")
+                    await sync_legacy_pool(session, user_id)
+                    used = await session.scalar(
+                        select(func.count(SenderAccount.id)).where(
+                            SenderAccount.user_id == user_id,
+                            SenderAccount.platform == "instagram",
+                            SenderAccount.deleted_at.is_(None),
+                        )
+                    )
+                    await ensure_usage_limit(
+                        session,
+                        user_id=user_id,
+                        limit_key="instagram_account_limit",
+                        used=used or 0,
+                        resource_label="Instagram-аккаунты",
+                    )
                     other_legacy = await session.scalar(
                         select(UserInstagramAccount.id).where(
                             UserInstagramAccount.normalized_login == normalized_login,

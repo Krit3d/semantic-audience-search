@@ -22,7 +22,8 @@ export const FEATURE_TITLES: Record<string, string> = {
 
 export const LIMIT_TITLES: Record<string, string> = {
   brand_limit: 'Брендов в базе знаний',
-  dialogs_monthly_limit: 'Диалогов в месяц',
+  instagram_account_limit: 'Instagram-аккаунтов для связи',
+  dialogs_monthly_limit: 'Диалогов с авторами в месяц',
 };
 
 /** Подписка в целом даёт доступ ко всем разделам CRM — это важно показывать явно. */

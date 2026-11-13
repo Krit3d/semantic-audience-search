@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import func, or_, select
 
 from src.api.dependencies import get_current_user, get_db, get_optional_user, get_search_service
+from src.api.services.author_privacy import apply_instagram_username_visibility
 from src.api.schemas import BrandAnalysisRequest, BrandAnalysisResponse, SearchPlanRequest, SearchPlanResponse, SearchRequest, SearchResponse, SimilarSearchRequest
 from src.api.services.search import SearchService
 from src.db.database import Database
@@ -82,7 +83,8 @@ async def search_content(
     if payload.include_contacts:
         await authorize_contact_results(request, db)
     result_limit = None if await has_unlimited_author_results(current_user, db) else 20
-    return await service.execute_search(payload, result_limit=result_limit)
+    response = await service.execute_search(payload, result_limit=result_limit)
+    return await apply_instagram_username_visibility(response, current_user=current_user, db=db)
 
 
 @router.post("/plan", response_model=SearchPlanResponse, response_model_exclude_none=True)
@@ -138,10 +140,7 @@ async def search_similar(
             query_parts.append(acc.category_path.replace("/", " "))
         if acc.title:
             query_parts.append(acc.title)
-    seed_names = {
-        (f"@{a.username}" if a.username and not a.username.startswith("@") else a.username or a.title or "")
-        for a in seeds
-    }
+    seed_names = {a.title or "" for a in seeds}
     query = " ".join(query_parts).strip()
     if not query:
         raise HTTPException(status_code=400, detail="Недостаточно данных об авторах для подбора похожих")
@@ -160,4 +159,4 @@ async def search_similar(
             break
     response.items = filtered
     response.total = len(filtered)
-    return response
+    return await apply_instagram_username_visibility(response, current_user=current_user, db=db)

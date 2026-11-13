@@ -231,7 +231,7 @@ export default function SettingsScreen({ user, onOpenBrand }: {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-          {widget('brands', 'Клиенты и бренды', `${brands.length} брендов · продукт, правила, условия, реквизиты`, <Building2 size={20} />)}
+          {widget('brands', 'Описание бренда', `${brands.length} брендов · продукт, правила, условия, реквизиты`, <Building2 size={20} />)}
           {widget('authors', 'База авторов', `${creators.length} авторов · ${shortlist.length} в шорт-листе`, <Users size={20} />)}
           {widget('erid', 'Маркировка ERID', `${eridRecords.length} маркеров · ${noEridPubs.length} публикации без ERID`, <ShieldCheck size={20} />)}
           {widget('accounts', 'Аккаунты для связи', 'Instagram · добавление и подтверждение', <Instagram size={20} />)}

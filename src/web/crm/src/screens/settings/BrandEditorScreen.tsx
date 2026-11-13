@@ -81,6 +81,16 @@ const toDraft = (b: BrandItem): Draft => ({
   },
 });
 
+const filled = (value: string | undefined): boolean => Boolean(value?.trim());
+const filledItems = (items: string[]): boolean => items.some(filled);
+
+const tabCompletion = (draft: Draft): Record<Tab, boolean> => ({
+  main: filled(draft.name) && filled(draft.category) && filled(draft.desc) && filled(draft.kb.short) && REQ_FIELDS.every(field => filled(draft.kb.requisites[field.k])),
+  product: draft.kb.products.length > 0 && draft.kb.products.every(product => filled(product.name) && filled(product.desc)) && filledItems(draft.kb.usp),
+  rules: filledItems(draft.kb.allowed) && filledItems(draft.kb.forbidden) && filledItems(draft.kb.mentions),
+  terms: draft.kb.pay_types.some(item => item.on && filled(item.label) && filled(item.rate)),
+});
+
 const inputCls = 'h-[42px] px-3.5 rounded-[10px] border border-line text-[14.5px] text-ink outline-none transition-shadow focus:border-brand-300 focus:ring-[3px] focus:ring-brand-100';
 const areaCls = 'px-3.5 py-3 rounded-[10px] border border-line text-[14.5px] leading-relaxed text-ink outline-none resize-vertical transition-shadow focus:border-brand-300 focus:ring-[3px] focus:ring-brand-100';
 const rowInputCls = 'w-full h-9 px-2 rounded-lg border-0 bg-transparent text-[14.5px] text-gray-800 outline-none hover:bg-page focus:bg-white focus:ring-2 focus:ring-brand-200';
@@ -253,6 +263,7 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
   const active = draft.status === 'Активен';
   const letter = (draft.name || '').trim().charAt(0).toUpperCase() || '+';
   const galleryProduct = galleryFor === null ? null : draft.kb.products[galleryFor] ?? null;
+  const completedTabs = tabCompletion(draft);
 
   return (
     <div className="h-full flex flex-col bg-page">
@@ -281,8 +292,9 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
         <div role="tablist" className="flex flex-wrap gap-1 mt-3">
           {TABS.map(t => (
             <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
-              className={'h-11 px-2.5 -mb-px border-b-2 text-[13.5px] transition-colors ' + (tab === t.id ? 'border-brand-500 font-bold text-brand-600' : 'border-transparent font-semibold text-muted hover:text-ink')}>
+              className={'h-11 px-2.5 -mb-px border-b-2 text-[13.5px] transition-colors inline-flex items-center gap-1.5 ' + (tab === t.id ? 'border-brand-500 font-bold text-brand-600' : 'border-transparent font-semibold text-muted hover:text-ink')}>
               {t.label}
+              <Check size={14} strokeWidth={2.5} aria-label={completedTabs[t.id] ? 'Вкладка заполнена' : 'Вкладка не заполнена'} className={completedTabs[t.id] ? 'text-emerald-500' : 'text-gray-300'} />
             </button>
           ))}
         </div>
@@ -333,13 +345,10 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
               )}
               {draft.kb.products.map((p, i) => (
                 <article key={i} className="bg-white border border-line rounded-2xl p-4 flex gap-4">
-                  <div className="w-[92px] shrink-0 flex flex-col gap-2">
+                  <div className="w-[92px] shrink-0">
                     <span className="w-[92px] h-[92px] rounded-[14px] shadow-md overflow-hidden flex items-center justify-center" style={{ background: `radial-gradient(circle at 30% 25%,hsl(${p.hue} 80% 92%),hsl(${p.hue + 20} 60% 62%) 60%,hsl(${p.hue + 30} 55% 45%))` }}>
                       {(p.selected_image || p.logo_url) && <img src={p.selected_image || p.logo_url} alt={`Изображение продукта ${p.name}`} className="w-full h-full object-cover" />}
                     </span>
-                    <button type="button" onClick={() => setGalleryFor(i)} className="inline-flex items-center justify-center gap-1 min-h-8 px-1 rounded-lg border border-brand-200 text-brand-600 text-[11px] font-bold text-center hover:bg-brand-50">
-                      <Upload size={12} />{p.selected_image || p.logo_url ? 'Сменить логотип' : 'Логотип'}
-                    </button>
                   </div>
                   <div className="flex-1 min-w-0 flex flex-col gap-2">
                     <div className="flex items-center gap-2">
@@ -359,6 +368,11 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
                       <label className="flex flex-col gap-1.5 text-[12.5px] font-semibold text-gray-600">Артикул
                         <input maxLength={255} value={p.sku} onChange={e => putProduct(i, { sku: e.target.value })} className={inputCls} />
                       </label>
+                      <div className="flex flex-col gap-1.5 text-[12.5px] font-semibold text-gray-600 sm:col-span-2">Фото продукта
+                        <button type="button" onClick={() => setGalleryFor(i)} className="inline-flex items-center justify-center gap-2 h-[42px] px-3.5 rounded-[10px] border border-brand-200 bg-white text-brand-600 text-[13px] font-bold hover:bg-brand-50 transition-colors">
+                          <Upload size={15} />Загрузить фото
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-1.5">

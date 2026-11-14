@@ -371,7 +371,7 @@ class InstagramAccountWorker:
         account.remote_status = remote_status if isinstance(remote_status, str) else None
         account.last_synced_at = now
         protected = {"bad_password", "not_logged_in", "not_logged_in_bad", "email_code", "rate_limit_error"}
-        if account.status in protected or account.status not in {"in_queue", "needcheck", "ok", "error"}:
+        if remote_status != "ok" and (account.status in protected or account.status not in {"in_queue", "needcheck", "ok", "error"}):
             return
         if isinstance(remote_status, str) and remote_status in _KNOWN_STATUSES:
             account.status = remote_status

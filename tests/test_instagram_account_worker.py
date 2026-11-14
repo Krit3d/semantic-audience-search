@@ -103,6 +103,17 @@ def test_sync_does_not_overwrite_user_action(status: str) -> None:
     assert item.last_synced_at == NOW
 
 
+@pytest.mark.parametrize("status", ["bad_password", "rate_limit_error", "not_logged_in", "not_logged_in_bad", "email_code"])
+def test_sync_remote_ok_clears_stale_user_action(status: str) -> None:
+    item = account(status)
+    item.last_error_code = status
+    InstagramAccountWorker.apply_sync(item, {"billing": "active", "promo": "none", "status": "ok"}, NOW)
+    assert item.status == "ok"
+    assert item.remote_status == "ok"
+    assert item.last_error_code is None
+    assert item.next_poll_at is None
+
+
 def test_sync_does_not_delete_account_missing_from_remote_response() -> None:
     item = account("ok")
     assert item.deleted_at is None

@@ -55,7 +55,7 @@ const STATUS_LABELS: Record<InstagramAccountItem['status'], string> = {
   in_queue: 'Проверка...',
   needcheck: 'Проверка ещё идёт, подождите 1 минуту',
   ok: 'Аккаунт подтверждён и активен',
-  bad_password: 'Нужен новый пароль',
+  bad_password: 'Instagram не подтвердил вход. Можно повторить с сохранёнными данными.',
   rate_limit_error: 'Откройте Instagram и проверьте уведомления',
   not_logged_in: 'Введите резервный или 2FA-код',
   not_logged_in_bad: 'Код неверен. Введите его повторно',
@@ -203,7 +203,21 @@ function InstagramAccountCard({ account, brand, brandId, onUpdated, onDelete }: 
   const [actionOpen, setActionOpen] = useState(false);
   const [resuming, setResuming] = useState(false);
   const toast = useToast();
-  const needsForm = ['bad_password', 'not_logged_in', 'not_logged_in_bad', 'email_code'].includes(account.status);
+  const needsForm = ['not_logged_in', 'not_logged_in_bad', 'email_code'].includes(account.status);
+
+  const reset = async () => {
+    if (resuming) return;
+    setResuming(true);
+    try {
+      onUpdated(brandId
+        ? await api.resetInstagramAccount(account.id, brandId)
+        : await api.resetInstagramAccount(account.id));
+    } catch (reason: unknown) {
+      toast('err', reason instanceof Error ? reason.message : 'Не удалось начать подключение заново');
+    } finally {
+      setResuming(false);
+    }
+  };
 
   const resume = async () => {
     if (resuming) return;
@@ -237,10 +251,17 @@ function InstagramAccountCard({ account, brand, brandId, onUpdated, onDelete }: 
       <div className="text-[13px] font-semibold text-body">{STATUS_LABELS[account.status]}</div>
       {account.stuck && (
         <div role="alert" className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[12.5px] font-semibold">
-          <ShieldAlert size={16} className="shrink-0 mt-0.5" />Проверка длится больше 20 минут. Попробуйте повторить позже или обратитесь в поддержку.
+          <ShieldAlert size={16} className="shrink-0 mt-0.5" />Проверка длится больше 20 минут. Начните подключение заново — пароль повторно вводить не нужно.
         </div>
       )}
-      {needsForm && <Btn size="sm" variant="secondary" onClick={() => setActionOpen(true)}>{account.status === 'bad_password' ? 'Изменить пароль' : 'Ввести код'}</Btn>}
+      {account.status === 'bad_password' && (
+        <div className="flex flex-wrap gap-2">
+          <Btn size="sm" disabled={resuming} onClick={() => void reset()}>{resuming ? 'Начинаем заново…' : 'Начать подключение заново'}</Btn>
+          <Btn size="sm" variant="secondary" onClick={() => setActionOpen(true)}>Изменить пароль</Btn>
+        </div>
+      )}
+      {account.stuck && account.status !== 'bad_password' && <Btn size="sm" disabled={resuming} onClick={() => void reset()}>{resuming ? 'Начинаем заново…' : 'Начать подключение заново'}</Btn>}
+      {needsForm && <Btn size="sm" variant="secondary" onClick={() => setActionOpen(true)}>Ввести код</Btn>}
       {account.status === 'rate_limit_error' && <Btn size="sm" variant="secondary" disabled={resuming} onClick={() => void resume()}>{resuming ? 'Возобновляем…' : 'Я проверил уведомления'}</Btn>}
       {actionOpen && (
         <InstagramAccountForm

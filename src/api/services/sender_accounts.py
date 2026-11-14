@@ -289,6 +289,43 @@ class SenderAccountService:
                 "password",
             ) from None
 
+    async def reset_account(self, user_id: int, brand_id: int, account_id: int) -> SenderAccountResponse:
+        try:
+            async with self._db.async_session() as session:
+                async with session.begin():
+                    await self._owned_brand(session, user_id, brand_id)
+                    account = await self._owned_account(session, user_id, brand_id, account_id, for_update=True)
+                    if account.password_ciphertext is None or account.password_nonce is None:
+                        raise InstagramAccountServiceError(400, "password_required", "Сохранённые данные недоступны. Добавьте аккаунт заново")
+                    password = self._cipher().decrypt(account.password_ciphertext, account.password_nonce)
+                    async with self._client() as client:
+                        try:
+                            await client.remove_account(account.normalized_login)
+                        except BridgitAPIError as error:
+                            if error.error_code != 14:
+                                raise
+                        await client.add_account(account.normalized_login, password, None, account.country)
+                    now = datetime.now(timezone.utc)
+                    account.status = "in_queue"
+                    account.remote_status = None
+                    account.last_error_code = None
+                    account.confirmation_started_at = now
+                    account.last_polled_at = None
+                    account.next_poll_at = now + timedelta(seconds=self._settings.bridgit_account_poll_interval_s)
+                    account.stuck_warning_sent_at = None
+                    account.lease_owner = None
+                    account.lease_expires_at = None
+                    account.deleted_at = None
+                    await session.flush()
+                    await session.refresh(account)
+                    response = self._response(account)
+            logger.info("Sender account reset queued user_id=%s account_id=%s", user_id, account_id)
+            return response
+        except BridgitAPIError as error:
+            raise InstagramAccountService._translate_bridgit_error(error) from None
+        except ValueError:
+            raise InstagramAccountServiceError(400, "password_required", "Сохранённые данные недоступны. Добавьте аккаунт заново") from None
+
     async def delete_account(
         self,
         user_id: int,

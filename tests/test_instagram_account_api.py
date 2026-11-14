@@ -57,6 +57,10 @@ class FakeInstagramService:
         self.calls.append(args)
         return self.response()
 
+    async def reset_account(self, *args):
+        self.calls.append(args)
+        return self.response()
+
     async def delete_account(self, user_id: int, account_id: int):
         return {"status": "deleted", "id": account_id, "login": "creator", "was_last_account": True}
 
@@ -144,9 +148,12 @@ async def test_confirm_resume_and_delete_routes() -> None:
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         confirm = await client.post("/api/v1/crm/instagram-accounts/7/confirm", json={"two_factor": "123456"})
         resume = await client.post("/api/v1/crm/instagram-accounts/7/resume")
+        reset = await client.post("/api/v1/crm/instagram-accounts/7/reset")
         delete = await client.delete("/api/v1/crm/instagram-accounts/7")
     assert confirm.status_code == 200
     assert resume.status_code == 200
+    assert reset.status_code == 200
+    assert service.calls[-1] == (11, 7)
     assert delete.status_code == 200
     assert delete.json()["was_last_account"] is True
 

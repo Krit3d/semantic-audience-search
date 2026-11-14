@@ -14,6 +14,7 @@ vi.mock('../../services/api', async () => {
       addInstagramAccount: vi.fn(),
       confirmInstagramAccount: vi.fn(),
       resumeInstagramAccount: vi.fn(),
+      resetInstagramAccount: vi.fn(),
       deleteInstagramAccount: vi.fn(),
     },
   };
@@ -119,6 +120,20 @@ describe('InstagramAccounts', () => {
     await user.type(screen.getByLabelText(/2FA/), '123456');
     await user.click(screen.getByRole('button', { name: 'Подтвердить' }));
     await waitFor(() => expect(mockedApi.confirmInstagramAccount).toHaveBeenCalledWith(7, { two_factor: '123456' }));
+  });
+
+  it('resets connection with saved credentials without requiring a new password', async () => {
+    mockedApi.getInstagramAccounts.mockResolvedValue([account({ status: 'bad_password' })]);
+    mockedApi.resetInstagramAccount.mockResolvedValue(account({ status: 'in_queue' }));
+    const user = userEvent.setup();
+    render(<InstagramAccounts />);
+
+    expect(await screen.findByText('Instagram не подтвердил вход. Можно повторить с сохранёнными данными.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Начать подключение заново' }));
+
+    await waitFor(() => expect(mockedApi.resetInstagramAccount).toHaveBeenCalledWith(7));
+    expect(screen.queryByLabelText('Новый пароль')).not.toBeInTheDocument();
+    expect(screen.queryByText('bad_password')).not.toBeInTheDocument();
   });
 
   it('warns before deleting the last account', async () => {

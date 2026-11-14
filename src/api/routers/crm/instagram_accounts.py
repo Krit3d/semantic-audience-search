@@ -89,6 +89,18 @@ async def resume_instagram_account(
         raise_service_error(error)
 
 
+@router.post("/{account_id}/reset", response_model=InstagramAccountResponse)
+async def reset_instagram_account(
+    account_id: int,
+    current_user: User = Depends(get_current_user),
+    service: InstagramAccountService = Depends(get_instagram_account_service),
+) -> InstagramAccountResponse:
+    try:
+        return await service.reset_account(current_user.id, account_id)
+    except InstagramAccountServiceError as error:
+        raise_service_error(error)
+
+
 @router.delete("/{account_id}", response_model=InstagramAccountDeleteResponse)
 async def delete_instagram_account(
     account_id: int,

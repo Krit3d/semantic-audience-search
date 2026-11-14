@@ -61,16 +61,18 @@ async def test_add_account_uses_post_body_without_url_secrets() -> None:
 
 @pytest.mark.asyncio
 async def test_update_and_remove_use_expected_methods() -> None:
-    paths: list[str] = []
+    requests: list[httpx.Request] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        paths.append(request.url.path)
+        requests.append(request)
         return httpx.Response(200, json={"status": "success", "result": "in_queue"})
 
     client = make_client(handler)
     await client.update_account("creator", "new-password", "654321")
     await client.remove_account("creator")
-    assert paths == ["/api/public/v3/account/update", "/api/public/v3/account/remove"]
+    assert [request.url.path for request in requests] == ["/api/public/v3/account/update", "/api/public/v3/account/remove"]
+    assert requests[1].url.params["login"] == "creator"
+    assert requests[1].url.params["api_key"] == "secret-api-key"
     await client.aclose()
 
 

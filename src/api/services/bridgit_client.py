@@ -99,6 +99,7 @@ class BridgitClient:
         path: str,
         *,
         payload: dict[str, Any] | None = None,
+        query: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         is_get = method == "GET"
         attempts = self._get_retries + 1 if is_get else 1
@@ -107,7 +108,7 @@ class BridgitClient:
                 if is_get:
                     response = await self._client.get(path, params=payload)
                 else:
-                    response = await self._client.post(path, data=payload)
+                    response = await self._client.post(path, data=payload, params=query)
             except httpx.TimeoutException:
                 if attempt + 1 < attempts:
                     await self._backoff(attempt)
@@ -235,7 +236,7 @@ class BridgitClient:
         data = self._ensure_success(await self._request(
             "POST",
             "/account/remove",
-            payload={"api_key": self._api_key, "login": self._clean_login(login)},
+            query={"api_key": self._api_key, "login": self._clean_login(login)},
         ))
         return data
 

@@ -910,6 +910,11 @@ export const api = {
     return request<InstagramAccountItem>(path, { method: 'POST', body: '{}' });
   },
 
+  async resetInstagramAccount(accountId: number, brandId?: number): Promise<InstagramAccountItem> {
+    const path = brandId ? `/brands/${brandId}/accounts/${accountId}/reset` : `/instagram-accounts/${accountId}/reset`;
+    return request<InstagramAccountItem>(path, { method: 'POST', body: '{}' });
+  },
+
   async deleteInstagramAccount(accountId: number, brandId?: number): Promise<InstagramAccountDeleteResult> {
     const path = brandId ? `/brands/${brandId}/accounts/${accountId}` : `/instagram-accounts/${accountId}`;
     return request<InstagramAccountDeleteResult>(path, { method: 'DELETE' });

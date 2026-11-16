@@ -2,7 +2,7 @@ import { Bold, BookOpen, Check, Download, FilePlus2, GitBranch, Italic, List, Me
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { FakeQR, SocialIcon } from '../components/icons';
 import { Avatar, Badge, Btn, CopyBtn, Modal, SidePanel, Tabs, Tip, useToast } from '../components/ui';
-import { ARCHIVED_STAGE, fmtMoney, getStage, resolveAuthor, STAGES, type Deal, type DealMsg } from '../data';
+import { ARCHIVED_STAGE, fmtMoney, getStage, resolveAuthor, SHORTLIST_STAGE, STAGES, type Deal, type DealMsg } from '../data';
 import { api, mapDealItemToDeal, type DealMessageItem } from '../services/api';
 import { brandLetter, findBrand, useBrands } from '../services/brands';
 
@@ -94,6 +94,7 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
     payTypes: (foundBrand?.kb?.pay_types ?? []).map((p, i) => ({ id: String(i), label: p.label, on: p.on, rate: p.rate, def: p.def })),
   };
   const stage = getStage(deal.stage);
+  const progressStage = deal.stage === SHORTLIST_STAGE ? 0 : deal.stage;
 
   const storageKey = `creatorflow_docs_${deal.id}`;
   const [docs, setDocs] = useState<DealDocument[]>(() => {
@@ -354,18 +355,23 @@ export default function DealPanel({ deal, deals, initialTab, onClose, onUpdate, 
             <section>
               <h3 className="text-[12px] font-bold text-gray-400 uppercase tracking-wide mb-3">Этапы сделки</h3>
               <div className="flex items-start">
-                {STAGES.filter(s => s.id !== 7).map((s, i) => (
+                {STAGES.filter(s => s.id !== SHORTLIST_STAGE).map((s, i) => (
                   <div key={s.id} className="flex-1 flex flex-col items-center relative">
-                    {i > 0 && <span className={`absolute right-1/2 top-[13px] w-full h-[3px] rounded ${s.id <= deal.stage ? 'bg-indigo-400' : 'bg-gray-200'}`} style={{ zIndex: 0 }} />}
-                    <span className={`relative z-10 w-[26px] h-[26px] rounded-full flex items-center justify-center text-[11px] font-extrabold border-2 transition-all ${s.id < deal.stage ? 'bg-indigo-500 border-indigo-500 text-white'
-                        : s.id === deal.stage ? 'bg-white border-indigo-500 text-indigo-600 pulse-ring'
+                    {i > 0 && <span className={`absolute right-1/2 top-[13px] w-full h-[3px] rounded ${s.id <= progressStage ? 'bg-indigo-400' : 'bg-gray-200'}`} style={{ zIndex: 0 }} />}
+                    <span className={`relative z-10 w-[26px] h-[26px] rounded-full flex items-center justify-center text-[11px] font-extrabold border-2 transition-all ${s.id < progressStage ? 'bg-indigo-500 border-indigo-500 text-white'
+                        : s.id === progressStage ? 'bg-white border-indigo-500 text-indigo-600 pulse-ring'
                           : 'bg-white border-gray-200 text-gray-300'}`}>
-                      {s.id < deal.stage ? <Check size={13} /> : i + 1}
+                      {s.id < progressStage ? <Check size={13} /> : i + 1}
                     </span>
-                    <span className={`text-[10px] font-bold mt-1.5 text-center leading-tight truncate max-w-[85px] ${s.id === deal.stage ? 'text-indigo-600' : 'text-gray-400'}`}>{s.name}</span>
+                    <span className={`text-[10px] font-bold mt-1.5 text-center leading-tight truncate max-w-[85px] ${s.id === progressStage ? 'text-indigo-600' : 'text-gray-400'}`}>{s.name}</span>
                   </div>
                 ))}
               </div>
+              {deal.stage === SHORTLIST_STAGE && (
+                <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3 text-[12.5px] font-semibold text-violet-700">
+                  Сделка находится в шорт-листе. Рабочие этапы ещё не начались.
+                </div>
+              )}
               {deal.stage === 0 && (
                 <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[12.5px] font-semibold text-slate-600 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />

@@ -266,18 +266,6 @@ function buildLegalFooter() {
   return footer;
 }
 
-function buildHeader() {
-  const header = document.createElement("header");
-  header.className = "header";
-  header.innerHTML = `
-    <div class="header-inner">
-      <button class="brand-btn" data-action="go-search">
-        <span class="brand-name">Collabrama</span>
-      </button>
-    </div>`;
-  return header;
-}
-
 function buildFilterBar() {
   return `
     <div class="search-filters">
@@ -528,7 +516,6 @@ function render() {
 
   const header = app.querySelector(".header");
   if (header) header.remove();
-  app.prepend(buildHeader());
 
   main.innerHTML = "";
 

@@ -24,6 +24,8 @@ proxies.txt
 .local-storage/
 dist/
 node_modules/
+src/web/crm/vite-check.log
+src/web/crm/vite-check.pid
 
 # Git
 .git/

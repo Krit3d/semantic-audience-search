@@ -6,6 +6,7 @@ import { Btn, Modal, useToast } from '../../components/ui';
 import { Select, Skeleton, Empty, ErrorState } from '../../components/kit';
 import { SocialIcon } from '../../components/icons';
 import { api, mapDealItemToDeal, normalizeSocial, type BrandItem, type ShortlistItem } from '../../services/api';
+import AutoOutreachModal from './AutoOutreachModal';
 
 const TYPE_STYLE: Record<string, string> = {
   Stories: 'bg-violet-50 text-violet-700 border-violet-200',
@@ -81,6 +82,7 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
   const [undo, setUndo] = useState<{ text: string; run: () => void } | null>(null);
   const [dealToDelete, setDealToDelete] = useState<Deal | null>(null);
   const [deletingDeal, setDeletingDeal] = useState(false);
+  const [outreachOpen, setOutreachOpen] = useState(false);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragRef = useRef<KanbanCard | null>(null);
   const pendingDrops = useRef(new Set<string>());
@@ -351,6 +353,14 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
           </button>
         </div>
       )}
+      {stageId === 1 && (
+        <div className="px-2 pb-2">
+          <button type="button" onClick={() => setOutreachOpen(true)}
+            className="w-full flex items-center justify-center gap-1.5 h-8 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 text-[12px] font-bold hover:bg-violet-100 transition-colors">
+            <Sparkles size={13} />Автоаутрич
+          </button>
+        </div>
+      )}
       <div className="flex-1 min-h-0 overflow-y-auto scroll-thin px-2 pb-2 flex flex-col gap-2">
         {cards.map(c => c.kind === 'short' ? renderShortCard(c) : renderDealCard(c.deal))}
         {cards.length === 0 && (
@@ -545,6 +555,14 @@ export default function DealsScreen({ deals, dealsStatus, onRetryDeals, setDeals
               text="Добавьте авторов из поиска Collabrama — они появятся в шорт-листе, или создайте сделку вручную." />
           </div>
         </div>
+      )}
+
+      {outreachOpen && (
+        <AutoOutreachModal
+          brands={brands}
+          onClose={() => setOutreachOpen(false)}
+          onFinished={onRetryDeals}
+        />
       )}
 
       {dealToDelete && (

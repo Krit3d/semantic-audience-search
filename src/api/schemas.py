@@ -671,6 +671,52 @@ class CreatorSendMessageRequest(BaseModel):
     media_type: str | None = None
 
 
+class AutoOutreachAccountItem(BaseModel):
+    id: int
+    login: str
+    brand_id: int | None = None
+
+
+class AutoOutreachPreviewResponse(BaseModel):
+    brand_id: int
+    brand_name: str
+    total_deals: int
+    eligible_count: int
+    already_contacted_count: int
+    unsupported_count: int
+    accounts: list[AutoOutreachAccountItem] = Field(default_factory=list)
+
+
+class AutoOutreachRequest(BaseModel):
+    brand_id: int = Field(strict=True, gt=0)
+    confirmed: bool
+
+    @field_validator("confirmed")
+    @classmethod
+    def require_confirmation(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError("Для запуска рассылки требуется подтверждение")
+        return value
+
+
+class AutoOutreachResultItem(BaseModel):
+    deal_id: int
+    account_id: int
+    author_handle: str
+    status: str
+    message_id: int | None = None
+    sender_account_id: int | None = None
+    sender_login: str | None = None
+    error: str | None = None
+
+
+class AutoOutreachRunResponse(BaseModel):
+    queued_count: int
+    skipped_count: int
+    failed_count: int
+    results: list[AutoOutreachResultItem] = Field(default_factory=list)
+
+
 class ChannelReplaceRequest(BaseModel):
     sender_account_id: int | None = Field(default=None, strict=True, gt=0)
 

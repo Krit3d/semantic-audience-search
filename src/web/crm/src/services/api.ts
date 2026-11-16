@@ -216,6 +216,40 @@ export interface CommunicationAccountAvailability {
   has_working_account: boolean;
 }
 
+export interface AutoOutreachAccountItem {
+  id: number;
+  login: string;
+  brand_id: number | null;
+}
+
+export interface AutoOutreachPreview {
+  brand_id: number;
+  brand_name: string;
+  total_deals: number;
+  eligible_count: number;
+  already_contacted_count: number;
+  unsupported_count: number;
+  accounts: AutoOutreachAccountItem[];
+}
+
+export interface AutoOutreachResultItem {
+  deal_id: number;
+  account_id: number;
+  author_handle: string;
+  status: 'queued' | 'skipped' | 'failed' | string;
+  message_id: number | null;
+  sender_account_id: number | null;
+  sender_login: string | null;
+  error: string | null;
+}
+
+export interface AutoOutreachRunResult {
+  queued_count: number;
+  skipped_count: number;
+  failed_count: number;
+  results: AutoOutreachResultItem[];
+}
+
 export interface DealActivityItem {
   id: number;
   event_type: 'message' | 'stage_changed' | 'channel_blocked' | 'channel_deleted' | 'channel_replaced' | 'communication_resumed' | string;
@@ -810,6 +844,17 @@ export const api = {
     const query = `?creator_id=${encodeURIComponent(creatorId)}${channelType ? `&channel_type=${encodeURIComponent(channelType)}` : ''}`;
     return request<CommunicationChannelItem>(`/communications/init${query}`, {
       method: 'POST',
+    });
+  },
+
+  async previewAutoOutreach(brandId: number): Promise<AutoOutreachPreview> {
+    return request<AutoOutreachPreview>(`/outreach/preview?brand_id=${encodeURIComponent(brandId)}`);
+  },
+
+  async runAutoOutreach(brandId: number): Promise<AutoOutreachRunResult> {
+    return request<AutoOutreachRunResult>('/outreach', {
+      method: 'POST',
+      body: JSON.stringify({ brand_id: brandId, confirmed: true }),
     });
   },
 

@@ -15,6 +15,7 @@ import { userName, api,
 import { planTitle } from '../pricing/planMeta';
 import type { Social } from '../../data';
 import InstagramAccounts from './InstagramAccounts';
+import { downloadXlsx } from '../../services/spreadsheet';
 
 type Section = 'brands' | 'authors' | 'erid' | 'accounts';
 
@@ -117,16 +118,8 @@ const shortToRow = (item: ShortlistItem): AuthorRow => {
   };
 };
 
-const downloadCsv = (filename: string, header: string[], rows: string[][]) => {
-  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-  const csv = [header, ...rows].map(r => r.map(esc).join(';')).join('\n');
-  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
+const showDownloadError = (toast: ReturnType<typeof useToast>) => {
+  toast('err', 'Не удалось сформировать Excel-файл. Попробуйте ещё раз.');
 };
 
 const openSimilarSearch = (accountIds: string[]) => {
@@ -525,12 +518,12 @@ function AuthorsSection({ creators, shortlist, onChanged }: {
       .then(() => { toast('info', 'Выбранные убраны из шорт-листа'); setSel([]); onChanged(); });
   };
 
-  const exportCsv = () => {
-    downloadCsv(
-      'authors.csv',
+  const exportXlsx = () => {
+    void downloadXlsx(
+      'authors.xlsx',
       ['Ник', 'Имя', 'Платформа', 'Подписчики', 'ER', 'Источник', 'В шорт-листе'],
-      rows.map(r => [r.nick, r.name, r.soc, String(r.followers ?? ''), fmtEr(r.er), r.src, r.inShort ? 'да' : 'нет']),
-    );
+      rows.map(r => [r.nick, r.name, r.soc, r.followers, fmtEr(r.er), r.src, r.inShort ? 'да' : 'нет']),
+    ).catch(() => showDownloadError(toast));
   };
 
   const tabCls = (on: boolean) =>
@@ -552,7 +545,7 @@ function AuthorsSection({ creators, shortlist, onChanged }: {
           </button>
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
-          <Btn variant="secondary" size="sm" onClick={exportCsv} className="!rounded-full"><Download size={13} />Выгрузить</Btn>
+          <Btn variant="secondary" size="sm" onClick={exportXlsx} className="!rounded-full"><Download size={13} />Выгрузить XLSX</Btn>
         </div>
       </div>
 
@@ -661,12 +654,30 @@ function ImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () => 
   const [preview, setPreview] = useState<CreatorImportPreview | null>(null);
   const [target, setTarget] = useState<'both' | 'base'>('both');
   const [busy, setBusy] = useState(false);
+  const [fileError, setFileError] = useState('');
 
   const pickFile = (f: File) => {
+    setFileError('');
+    setPreview(null);
+    if (!/\.(csv|xlsx)$/i.test(f.name)) {
+      setFileError('Выберите файл CSV или XLSX.');
+      return;
+    }
+    if (f.size > 5 * 1024 * 1024) {
+      setFileError('Файл слишком большой: максимум 5 МБ.');
+      return;
+    }
+    setFile(f);
     setBusy(true);
     api.previewCreatorsImport(f)
-      .then(p => { setFile(f); setPreview(p); setBusy(false); })
-      .catch((err: unknown) => { setBusy(false); toast('err', err instanceof Error ? err.message : 'Не удалось прочитать файл'); });
+      .then(p => { setFile(f); setPreview(p); })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'Не удалось прочитать файл';
+        setFile(null);
+        setFileError(message);
+        toast('err', message);
+      })
+      .finally(() => setBusy(false));
   };
 
   const commit = () => {
@@ -718,7 +729,27 @@ function ImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () => 
           <button type="button" aria-label="Закрыть" onClick={onClose} className="ml-auto w-9 h-9 rounded-lg text-gray-500 flex items-center justify-center hover:bg-gray-100"><X size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto scroll-thin px-5 py-4 flex flex-col gap-4">
-          <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f); }} />
+          <p className="m-0 text-[13px] leading-relaxed text-gray-600">
+            Загрузите список авторов в формате XLSX или CSV. Первая строка — названия колонок. Поля «Платформа» и «Username» обязательны, остальные контакты можно оставить пустыми.
+          </p>
+
+          <div className="rounded-xl border border-line overflow-hidden">
+            <div className="px-3 py-2.5 bg-page flex items-center justify-between gap-2">
+              <span className="text-[12px] font-bold text-ink">Шаблон таблицы</span>
+              <button type="button" onClick={() => void downloadXlsx('authors-template.xlsx', ['Платформа*', 'Username*', 'TG для рекламы', 'TG личный', 'Email', 'Tel'], [['Instagram', '@username', '@advertising_tg', '@personal_tg', 'name@example.com', '+7 900 000-00-00']]).catch(() => showDownloadError(toast))}
+                className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-brand-600 hover:text-brand-700">
+                <Download size={13} />Скачать XLSX
+              </button>
+            </div>
+            <div className="overflow-x-auto scroll-thin">
+              <table className="w-full min-w-[600px] text-left text-[11px]">
+                <thead><tr className="bg-slate-50 text-gray-500">{['Платформа*', 'Username*', 'TG для рекламы', 'TG личный', 'Email', 'Tel'].map(label => <th key={label} className="px-2.5 py-2 whitespace-nowrap">{label}</th>)}</tr></thead>
+                <tbody><tr className="border-t border-slate-100 text-gray-500">{['Instagram', '@username', '@advertising_tg', '@personal_tg', 'name@example.com', '+7 900 000-00-00'].map(value => <td key={value} className="px-2.5 py-2 whitespace-nowrap">{value}</td>)}</tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f); e.target.value = ''; }} />
           {file && preview ? (
             <div className="flex items-center gap-3 px-3.5 py-3 rounded-xl border border-line bg-page">
               <span className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center text-[10px] font-extrabold">{(file.name.split('.').pop() || '').toUpperCase()}</span>
@@ -726,16 +757,18 @@ function ImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () => 
                 <div className="text-[13px] font-bold text-ink truncate">{file.name}</div>
                 <div className="text-[11.5px] text-muted">{preview.total} строк</div>
               </div>
-              <button type="button" onClick={() => { setFile(null); setPreview(null); if (fileRef.current) fileRef.current.value = ''; }}
+              <button type="button" onClick={() => fileRef.current?.click()}
                 className="ml-auto h-8 px-2.5 rounded-lg text-brand-600 text-[12.5px] font-semibold hover:bg-brand-50">Заменить</button>
             </div>
           ) : (
             <button type="button" onClick={() => fileRef.current?.click()} disabled={busy}
-              className="flex flex-col items-center justify-center gap-2 py-8 rounded-xl border-[1.5px] border-dashed border-line bg-page text-muted hover:border-brand-300 hover:text-brand-600 transition-colors">
+              className="flex flex-col items-center justify-center gap-2 py-8 rounded-xl border-[1.5px] border-dashed border-brand-300 bg-brand-50/40 text-brand-700 hover:border-brand-400 hover:bg-brand-50 transition-colors disabled:opacity-60">
               <Upload size={20} />
-              <span className="text-[13px] font-semibold">{busy ? 'Читаем файл…' : 'Выберите CSV или XLSX'}</span>
+              <span className="text-[13px] font-semibold">{busy ? `Читаем ${file?.name || 'файл'}…` : 'Выберите XLSX или CSV'}</span>
+              <span className="text-[11.5px] text-muted">до 5 МБ, до 500 строк</span>
             </button>
           )}
+          {fileError && <div role="alert" className="px-3 py-2.5 rounded-xl bg-red-50 text-red-700 text-[12.5px] font-semibold">{fileError}</div>}
 
           {preview && (
             <>
@@ -769,8 +802,7 @@ function ImportDrawer({ onClose, onDone }: { onClose: () => void; onDone: () => 
                   ))}
                 </div>
               </fieldset>
-              <button type="button" onClick={() => downloadCsv('authors_template.csv', ['username', 'platform'], [['example_author', 'Instagram']])}
-                className="self-start text-[12.5px] font-semibold text-brand-600 hover:text-brand-700">Скачать шаблон таблицы</button>
+              <p className="m-0 text-[12px] leading-relaxed text-muted">Проверьте строки перед импортом. Уже существующие и некорректные записи повторно добавлены не будут.</p>
             </>
           )}
         </div>
@@ -791,6 +823,7 @@ function EridSection({ records, brands, noEridPubs, onChanged }: {
   noEridPubs: PublicationItem[];
   onChanged: () => void;
 }) {
+  const toast = useToast();
   const [q, setQ] = useState('');
   const [fBrand, setFBrand] = useState('all');
   const [fStatus, setFStatus] = useState('all');
@@ -815,12 +848,12 @@ function EridSection({ records, brands, noEridPubs, onChanged }: {
   const sel = records.find(r => r.id === selId) ?? null;
   const warnHandles = noEridPubs.slice(0, 2).map(p => p.author_handle ?? '—').join(' · ');
 
-  const exportCsv = () => {
-    downloadCsv(
-      'erid_registry.csv',
+  const exportXlsx = () => {
+    void downloadXlsx(
+      'erid_registry.xlsx',
       ['ERID-код', 'Сделка', 'Автор', 'Бренд', 'Дата', 'Статус'],
       filtered.map(r => [r.code || '—', r.deal_title ?? '—', r.author_handle ?? '—', r.brand_name ?? '—', fmtDate(r.created_at), r.status]),
-    );
+    ).catch(() => showDownloadError(toast));
   };
 
   return (
@@ -829,7 +862,7 @@ function EridSection({ records, brands, noEridPubs, onChanged }: {
         <h2 id="er-h" className="m-0 text-[16px] font-extrabold text-ink">Реестр ERID-маркеров</h2>
         <span className="text-[12px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">38-ФЗ</span>
         <div className="ml-auto flex flex-wrap gap-2">
-          <Btn variant="secondary" size="sm" onClick={exportCsv} className="!rounded-full"><Download size={13} />Экспорт в Excel</Btn>
+          <Btn variant="secondary" size="sm" onClick={exportXlsx} className="!rounded-full"><Download size={13} />Экспорт в Excel</Btn>
           <Btn size="sm" onClick={() => setRequestOpen(true)} className="!rounded-full"><Plus size={13} />Запросить ERID</Btn>
         </div>
       </div>

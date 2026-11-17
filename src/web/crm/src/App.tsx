@@ -9,7 +9,6 @@ import { AppLayout, type NavId } from './layout/AppLayout';
 import DealPanel from './screens/DealPanel';
 import DealsScreen from './screens/deals/DealsScreen';
 import BrandEditorScreen from './screens/settings/BrandEditorScreen';
-import Authors from './screens/Authors';
 import AuthorProfile from './screens/AuthorProfile';
 import ContractWizard from './screens/ContractWizard';
 import SettingsScreen from './screens/settings/SettingsScreen';
@@ -31,9 +30,9 @@ const resetTokenFromHash = (): string | null => {
 import PricingScreen from './screens/pricing/PricingScreen';
 import SupportScreen from './screens/SupportScreen';
 
-type Screen = 'search' | 'kanban' | 'deals' | 'authors' | 'author' | 'comms' | 'settings' | 'brand' | 'analytics' | 'tickets' | 'pricing' | 'support';
+type Screen = 'search' | 'kanban' | 'deals' | 'author' | 'comms' | 'settings' | 'brand' | 'analytics' | 'tickets' | 'pricing' | 'support';
 
-const SCREENS: Screen[] = ['search', 'kanban', 'deals', 'authors', 'author', 'comms', 'settings', 'brand', 'analytics', 'tickets', 'pricing', 'support'];
+const SCREENS: Screen[] = ['search', 'kanban', 'deals', 'author', 'comms', 'settings', 'brand', 'analytics', 'tickets', 'pricing', 'support'];
 
 const screenFromHash = (): Screen => {
   let seg = window.location.hash;
@@ -41,6 +40,7 @@ const screenFromHash = (): Screen => {
   if (seg.startsWith('/')) seg = seg.slice(1);
   const path = seg.split('?')[0];
   if (/^settings\/brands\/\d+/.test(path)) return 'brand';
+  if (path === 'authors') return 'settings';
   return SCREENS.includes(path as Screen) ? (path as Screen) : 'search';
 };
 
@@ -106,12 +106,12 @@ const dealIdFromHash = (): string | null => {
 
 const NAV_BY_SCREEN: Record<Screen, NavId> = {
   search: 'search', kanban: 'deals', deals: 'deals', comms: 'comms', analytics: 'analytics',
-  authors: 'base', author: 'base', settings: 'settings', brand: 'settings', tickets: 'tickets',
+  author: 'base', settings: 'settings', brand: 'settings', tickets: 'tickets',
   pricing: 'pricing', support: 'support',
 };
 
 const HASH_BY_NAV: Record<NavId, Screen> = {
-  search: 'search', deals: 'kanban', comms: 'comms', analytics: 'analytics', base: 'authors', settings: 'settings', tickets: 'tickets',
+  search: 'search', deals: 'kanban', comms: 'comms', analytics: 'analytics', base: 'settings', settings: 'settings', tickets: 'tickets',
   pricing: 'pricing', support: 'support',
 };
 
@@ -219,8 +219,7 @@ function Shell({ user, onLogout, onUserUpdated }: { user: Record<string, unknown
       onLogout={onLogout} onNewDeal={() => setNewDeal({})}>
       {screen === 'search' && <SearchScreen />}
       {(screen === 'kanban' || screen === 'deals') && <DealsScreen deals={deals} dealsStatus={dealsStatus} onRetryDeals={loadDeals} setDeals={setDeals} onOpenDeal={openDeal} onNewDeal={() => setNewDeal({})} onOpenComms={(authorId: string, dealId?: string) => handleAuthorChat(String(authorId), dealId)} />}
-      {screen === 'authors' && <Authors deals={deals} onOpenProfile={id => { setProfileId(id); setScreen('author'); }} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} onOpenComms={(authorId: string) => handleAuthorChat(String(authorId))} />}
-      {screen === 'author' && <AuthorProfile authorId={profileId} deals={deals} onBack={() => setScreen('authors')} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} onOpenDeal={(id, tab) => openDeal(id, tab ?? 'comms')} onOpenComms={(id?: string) => handleAuthorChat(id ? String(id) : String(profileId))} />}
+      {screen === 'author' && <AuthorProfile authorId={profileId} deals={deals} onBack={() => { window.location.hash = '#/settings'; }} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} onOpenDeal={(id, tab) => openDeal(id, tab ?? 'comms')} onOpenComms={(id?: string) => handleAuthorChat(id ? String(id) : String(profileId))} />}
       {screen === 'comms' && <CommsScreen deals={deals} user={user} initialAuthorId={commsAuthorId} initialDealId={commsDealId} onOpenDeal={openDeal} onOpenSettings={() => { window.location.hash = '#/settings?tab=accounts'; }} onNewDeal={(id, meta) => setNewDeal({ authorId: id, authorName: meta?.name, authorHandle: meta?.handle })} />}
       {screen === 'settings' && <SettingsScreen user={user} onOpenBrand={openBrandEditor} onUserUpdated={onUserUpdated} />}
       {screen === 'brand' && brandEditorId !== null && <BrandEditorScreen brandId={brandEditorId} key={brandEditorId} onClose={() => { window.location.hash = '#/settings'; }} onOpenRegistry={() => { window.location.hash = '#/settings'; }} />}
@@ -595,7 +594,7 @@ export default function App() {
       window.location.href = buildRedirectUrl(redirectTarget, api.getToken(), loggedIn);
       return;
     }
-    window.location.hash = '#/authors';
+    window.location.hash = '#/settings';
   };
 
   const handleLogout = () => {
@@ -603,7 +602,7 @@ export default function App() {
     setUser(null);
     setAuthed(false);
     setPaywall(false);
-    window.location.hash = '#/authors';
+    window.location.hash = '#/settings';
   };
 
   const resetToken = !authed ? resetTokenFromHash() : null;

@@ -86,7 +86,7 @@ async def export_to_shortlist(
     if not raw_ids:
         return CrmShortlistResponse(
             added_count=0,
-            redirect_url=f"{request.app.state.settings.crm_frontend_url.rstrip('/')}/#/authors?import_ids={','.join(raw_ids)}",
+            redirect_url=f"{request.app.state.settings.crm_frontend_url.rstrip('/')}/#/settings",
         )
 
     numeric_ids: list[int] = []
@@ -160,7 +160,7 @@ async def export_to_shortlist(
 
     return CrmShortlistResponse(
         added_count=len(accounts),
-        redirect_url=f"{request.app.state.settings.crm_frontend_url.rstrip('/')}/#/authors?import_ids={','.join(raw_ids)}",
+        redirect_url=f"{request.app.state.settings.crm_frontend_url.rstrip('/')}/#/settings",
     )
 
 
@@ -812,7 +812,7 @@ PLATFORM_ALIASES: dict[str, str] = {
 
 def _parse_import_rows(filename: str, content: bytes) -> list[tuple[int, str, str]]:
     name = filename.lower()
-    rows: list[tuple[int, str, str]] = []
+    raw_rows: list[tuple[int, list[str]]] = []
     if name.endswith(".xlsx"):
         try:
             import openpyxl
@@ -828,23 +828,44 @@ def _parse_import_rows(filename: str, content: bytes) -> list[tuple[int, str, st
             return []
         for idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
             cells = [str(c).strip() if c is not None else "" for c in row]
-            joined = [c for c in cells if c]
-            if not joined:
-                continue
-            rows.append((idx, joined[0], joined[1] if len(joined) > 1 else ""))
+            if any(cells):
+                raw_rows.append((idx, cells))
         wb.close()
-        return rows
-    import csv
-    import io as _io
-    text = content.decode("utf-8-sig", errors="replace")
-    sample = text[:2048]
-    delimiter = ";" if sample.count(";") > sample.count(",") else ","
-    reader = csv.reader(_io.StringIO(text), delimiter=delimiter)
-    for idx, row in enumerate(reader, start=1):
-        cells = [c.strip() for c in row if c and c.strip()]
-        if not cells:
-            continue
-        rows.append((idx, cells[0], cells[1] if len(cells) > 1 else ""))
+    else:
+        import csv
+        import io as _io
+        text = content.decode("utf-8-sig", errors="replace")
+        sample = text[:2048]
+        delimiter = ";" if sample.count(";") > sample.count(",") else ","
+        reader = csv.reader(_io.StringIO(text), delimiter=delimiter)
+        for idx, row in enumerate(reader, start=1):
+            cells = [c.strip() for c in row]
+            if any(cells):
+                raw_rows.append((idx, cells))
+
+    if not raw_rows:
+        return []
+
+    def normalized_header(value: str) -> str:
+        return value.strip().lower().rstrip("*").strip()
+
+    first_cells = [normalized_header(cell) for cell in raw_rows[0][1]]
+    username_headers = {"username", "ник", "никнейм", "handle", "login", "ссылка", "link", "url", "профиль", "автор"}
+    platform_headers = {"platform", "платформа", "соцсеть", "social"}
+    username_index = next((i for i, cell in enumerate(first_cells) if cell in username_headers), None)
+    platform_index = next((i for i, cell in enumerate(first_cells) if cell in platform_headers), None)
+    has_header = username_index is not None
+    data_rows = raw_rows[1:] if has_header else raw_rows
+
+    rows: list[tuple[int, str, str]] = []
+    for row_no, cells in data_rows:
+        if has_header:
+            username = cells[username_index] if username_index < len(cells) else ""
+            platform = cells[platform_index] if platform_index is not None and platform_index < len(cells) else ""
+        else:
+            username = cells[0] if cells else ""
+            platform = cells[1] if len(cells) > 1 else ""
+        rows.append((row_no, username, platform))
     return rows
 
 

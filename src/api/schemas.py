@@ -467,7 +467,7 @@ class CrmShortlistRequest(BaseModel):
 
 class CrmShortlistResponse(BaseModel):
     added_count: int = Field(description="Number of accounts successfully exported to Twenty CRM")
-    redirect_url: str = Field(description="URL of the CRM frontend authors page for redirect")
+    redirect_url: str = Field(description="URL of the CRM settings page for redirect")
 
 
 class CrmLoginRequest(BaseModel):

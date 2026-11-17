@@ -34,7 +34,7 @@ export default function ResetPasswordScreen({ token }: { token: string }) {
   };
 
   const goLogin = () => {
-    window.location.hash = '#/authors';
+    window.location.hash = '#/settings';
     window.location.reload();
   };
 

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Check, Image, Lock, Maximize2, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Image, Lock, Maximize2, Plus, Save, Trash2, Upload, X, ZoomIn } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Empty, ErrorState, Select, SkeletonLines } from '../../components/kit';
 import { Btn, useToast } from '../../components/ui';
@@ -346,9 +346,15 @@ export default function BrandEditorScreen({ brandId, onClose, onOpenRegistry }: 
               {draft.kb.products.map((p, i) => (
                 <article key={i} className="bg-white border border-line rounded-2xl p-4 flex gap-4">
                   <div className="w-[92px] shrink-0">
-                    <span className="w-[92px] h-[92px] rounded-[14px] shadow-md overflow-hidden flex items-center justify-center" style={{ background: `radial-gradient(circle at 30% 25%,hsl(${p.hue} 80% 92%),hsl(${p.hue + 20} 60% 62%) 60%,hsl(${p.hue + 30} 55% 45%))` }}>
+                    <button type="button" onClick={() => setGalleryFor(i)} aria-label={`Открыть галерею продукта ${p.name}`} title="Открыть галерею"
+                      className="group relative w-[92px] h-[92px] rounded-[14px] shadow-md overflow-hidden flex items-center justify-center cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-brand-300" style={{ background: `radial-gradient(circle at 30% 25%,hsl(${p.hue} 80% 92%),hsl(${p.hue + 20} 60% 62%) 60%,hsl(${p.hue + 30} 55% 45%))` }}>
                       {(p.selected_image || p.logo_url) && <img src={p.selected_image || p.logo_url} alt={`Изображение продукта ${p.name}`} className="w-full h-full object-cover" />}
-                    </span>
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-200 group-hover:bg-black/30 group-hover:opacity-100 group-focus-visible:bg-black/30 group-focus-visible:opacity-100">
+                        <span className="w-10 h-10 rounded-full bg-white/95 text-brand-600 flex items-center justify-center shadow-lg transition-transform duration-200 group-hover:scale-110 group-hover:shadow-[0_0_18px_rgba(255,255,255,0.95)]">
+                          <ZoomIn size={22} strokeWidth={2.2} />
+                        </span>
+                      </span>
+                    </button>
                   </div>
                   <div className="flex-1 min-w-0 flex flex-col gap-2">
                     <div className="flex items-center gap-2">
